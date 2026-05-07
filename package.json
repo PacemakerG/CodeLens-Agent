@@ -1,0 +1,19 @@
+{
+  "name": "deep-ai-analysis",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "proxy": "node src/proxy.js",
+    "viewer": "node src/viewer.js",
+    "web": "node src/web-server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "commander": "^14.0.3",
+    "uuid": "^14.0.0"
+  }
+}
