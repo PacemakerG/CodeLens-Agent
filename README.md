@@ -45,14 +45,13 @@ Options:
 **Examples:**
 
 ```bash
-# Start on default port 7788
 deep-ai-analysis proxy
-
-# Custom port and log directory
 deep-ai-analysis proxy --port 9000 --output ~/ai-logs
 ```
 
 On startup, the proxy prints the listening address, active filter domains, log directory, and CA certificate path.
+
+---
 
 ### `start-mc`
 
@@ -73,17 +72,92 @@ Sets the following environment variables for the `mc` process:
 | `HTTPS_PROXY` | `http://127.0.0.1:<port>` |
 | `NODE_EXTRA_CA_CERTS` | `~/.mitmproxy/mitmproxy-ca-cert.pem` |
 
-**Examples:**
-
 ```bash
-# Launch mc using the default proxy port
 deep-ai-analysis start-mc
-
-# Use a custom port (must match the port proxy is listening on)
 deep-ai-analysis start-mc --port 9000
 ```
 
-If `mc` is not installed, an error is printed and the command exits with code 1. If the CA certificate does not exist yet, a warning is printed but `mc` is still launched (run `proxy` first to generate the certificate).
+---
+
+### `clear-req-resp`
+
+Cleans raw proxy JSONL logs into structured records. Parses `request.body` as JSON, reconstructs `response_json` from SSE events, and extracts `claude_session_id` from request headers. Non-SSE records are skipped.
+
+```
+Usage: deep-ai-analysis clear-req-resp [OPTIONS] INPUT
+
+Arguments:
+  INPUT  Path to a .jsonl file or a directory containing .jsonl files.
+
+Options:
+  -o, --output PATH  Output path (single-file mode only).
+  --help             Show this message and exit.
+```
+
+**Output format** (JSONL, one record per line):
+
+```json
+{
+  "timestamp": "2026-05-08T05:06:43.598393+00:00",
+  "domain": "mcli.sankuai.com",
+  "method": "POST",
+  "url": "https://mcli.sankuai.com/v1/messages",
+  "claude_session_id": "e75940a3-3a79-41bd-be4d-6d0fb1a5a307",
+  "request_json": { "model": "...", "messages": [...] },
+  "response_json": {
+    "message": {
+      "id": "msg_...", "model": "...", "stop_reason": "end_turn",
+      "content": { "text": "..." },
+      "usage": { "input_tokens": 206, "output_tokens": 79 }
+    }
+  }
+}
+```
+
+**Examples:**
+
+```bash
+# Single file → logs/2026-05-08_parsed.jsonl
+deep-ai-analysis clear-req-resp logs/2026-05-08.jsonl
+
+# Custom output path
+deep-ai-analysis clear-req-resp logs/2026-05-08.jsonl -o parsed.jsonl
+
+# Directory — processes all .jsonl files
+deep-ai-analysis clear-req-resp logs/
+```
+
+---
+
+### `web-server`
+
+Starts a local HTTP server that serves a browser-based viewer for Claude Code session logs. No file upload — the server reads directly from `~/.claude/projects`.
+
+```
+Usage: deep-ai-analysis web-server [OPTIONS]
+
+Options:
+  --port INTEGER          Port for the viewer API server.  [default: 7789]
+  --projects-dir PATH     Path to the Claude Code projects directory.
+                          [default: ~/.claude/projects]
+  --help                  Show this message and exit.
+```
+
+**Usage:**
+
+```bash
+# Start the API server
+deep-ai-analysis web-server
+
+# Then open viewer/index.html in your browser
+open viewer/index.html
+```
+
+The viewer lets you:
+- Browse all Claude Code sessions by project
+- View main session conversation (user messages, assistant responses, tool calls)
+- Inspect each subagent in a dedicated tab
+- See token usage statistics per session
 
 ## Domain Filtering
 
@@ -114,38 +188,15 @@ sudo security add-trusted-cert -d -r trustRoot \
 Then configure your HTTP client to use the proxy:
 
 ```bash
-# curl
-curl -x http://127.0.0.1:7788 https://mcli.sankuai.com/...
-
-# Environment variables (affects most CLI tools)
 export http_proxy=http://127.0.0.1:7788
 export https_proxy=http://127.0.0.1:7788
 ```
 
 ## Log Format
 
-Logs are written to `logs/YYYY-MM-DD.jsonl` — one JSON object per line.
+### Raw proxy log (`proxy` command)
 
-**Standard request:**
-
-```json
-{
-  "timestamp": "2026-05-08T10:30:00.123456+00:00",
-  "domain": "mcli.sankuai.com",
-  "method": "POST",
-  "url": "https://mcli.sankuai.com/v1/chat/completions",
-  "request": {
-    "headers": { "content-type": "application/json", "authorization": "Bearer ..." },
-    "body": "{\"model\": \"...\", \"messages\": [...]}"
-  },
-  "response": {
-    "status": 200,
-    "headers": { "content-type": "application/json" },
-    "body": "{\"id\": \"...\", \"choices\": [...]}"
-  },
-  "is_sse": false
-}
-```
+Written to `logs/YYYY-MM-DD.jsonl` — one JSON object per line.
 
 **SSE (streaming) request:**
 
@@ -154,31 +205,36 @@ Logs are written to `logs/YYYY-MM-DD.jsonl` — one JSON object per line.
   "timestamp": "2026-05-08T10:31:00.000000+00:00",
   "domain": "mcli.sankuai.com",
   "method": "POST",
-  "url": "https://mcli.sankuai.com/v1/chat/completions",
-  "request": { "headers": {}, "body": "..." },
+  "url": "https://mcli.sankuai.com/v1/messages",
+  "request": {
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"model\": \"...\", \"messages\": [...]}"
+  },
   "response": {
     "status": 200,
     "headers": { "content-type": "text/event-stream" },
-    "body": "data: {...}\n\ndata: {...}\n\ndata: [DONE]\n\n"
+    "body": "event: message_start\ndata: {...}\n\n..."
   },
   "is_sse": true,
-  "sse_events": [
-    "data: {\"id\":\"...\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}",
-    "data: {\"id\":\"...\",\"choices\":[{\"delta\":{\"content\":\" world\"}}]}",
-    "data: [DONE]"
-  ]
+  "sse_events": ["event: message_start\ndata: {...}", "..."]
 }
 ```
 
-**Query logs with `jq`:**
+> Note: `Authorization` headers are excluded from `request.headers` to prevent token leakage.
+
+### Parsed log (`clear-req-resp` command)
+
+See the [`clear-req-resp`](#clear-req-resp) section above for the parsed output format.
+
+**Query parsed logs with `jq`:**
 
 ```bash
-# Show all recorded URLs
-jq -r '.url' logs/2026-05-08.jsonl
+# Show all session IDs
+jq -r '.claude_session_id' logs/2026-05-08_parsed.jsonl | sort -u
 
-# Show only SSE requests
-jq 'select(.is_sse == true)' logs/2026-05-08.jsonl
+# Show model usage
+jq -r '.response_json.message.model' logs/2026-05-08_parsed.jsonl | sort | uniq -c
 
-# Count requests by method
-jq -r '.method' logs/2026-05-08.jsonl | sort | uniq -c
+# Show token usage per request
+jq '{url, usage: .response_json.message.usage}' logs/2026-05-08_parsed.jsonl
 ```
