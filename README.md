@@ -15,6 +15,18 @@ pip install -e .
 
 This registers the `deep-ai-analysis` command in your current Python environment.
 
+## Quick Start
+
+Intercept `mc` traffic in two steps:
+
+```bash
+# Terminal 1 — start the proxy
+deep-ai-analysis proxy
+
+# Terminal 2 — launch mc through the proxy
+deep-ai-analysis start-mc
+```
+
 ## Commands
 
 ### `proxy`
@@ -41,6 +53,37 @@ deep-ai-analysis proxy --port 9000 --output ~/ai-logs
 ```
 
 On startup, the proxy prints the listening address, active filter domains, log directory, and CA certificate path.
+
+### `start-mc`
+
+Launches `mc --code` with proxy environment variables automatically injected.
+
+```
+Usage: deep-ai-analysis start-mc [OPTIONS]
+
+Options:
+  --port INTEGER  Proxy port to point HTTPS_PROXY at.  [default: 7788]
+  --help          Show this message and exit.
+```
+
+Sets the following environment variables for the `mc` process:
+
+| Variable | Value |
+|---|---|
+| `HTTPS_PROXY` | `http://127.0.0.1:<port>` |
+| `NODE_EXTRA_CA_CERTS` | `~/.mitmproxy/mitmproxy-ca-cert.pem` |
+
+**Examples:**
+
+```bash
+# Launch mc using the default proxy port
+deep-ai-analysis start-mc
+
+# Use a custom port (must match the port proxy is listening on)
+deep-ai-analysis start-mc --port 9000
+```
+
+If `mc` is not installed, an error is printed and the command exits with code 1. If the CA certificate does not exist yet, a warning is printed but `mc` is still launched (run `proxy` first to generate the certificate).
 
 ## Domain Filtering
 
