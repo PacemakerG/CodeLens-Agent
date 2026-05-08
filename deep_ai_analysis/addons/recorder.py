@@ -147,7 +147,6 @@ class RecorderAddon:
         }
         if is_sse:
             record["sse_events"] = sse_events
-            record["sse_content"] = "\n\n".join(sse_events)
 
         try:
             self._append_record(record)
