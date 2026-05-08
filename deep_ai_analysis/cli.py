@@ -4,6 +4,7 @@ import click
 
 from deep_ai_analysis import __version__
 from deep_ai_analysis.commands.proxy import proxy
+from deep_ai_analysis.commands.start_mc import start_mc
 
 
 @click.group(invoke_without_command=True)
@@ -16,3 +17,4 @@ def cli(ctx: click.Context) -> None:
 
 
 cli.add_command(proxy)
+cli.add_command(start_mc)
