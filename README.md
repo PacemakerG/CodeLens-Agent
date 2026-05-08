@@ -1,126 +1,141 @@
-# Claude Code Request Interceptor
+# deep-ai-analysis
 
-Intercepts and logs all raw HTTP requests and responses between Claude Code and the Anthropic API, using a local reverse proxy.
+CLI toolkit for intercepting and analyzing AI service HTTP/HTTPS traffic.
 
-## How It Works
+## Requirements
 
-Claude Code's Anthropic SDK respects the `ANTHROPIC_BASE_URL` environment variable. This tool starts a local HTTP proxy at that URL, records every request/response (including streaming SSE), then forwards the traffic to `https://api.anthropic.com` transparently.
+- Python 3.10+
+- [mitmproxy](https://mitmproxy.org/) (installed automatically as a dependency)
 
-## Quick Start
-
-### 1. Install
-
-```bash
-npm install
-```
-
-### 2. Start the Proxy
+## Installation
 
 ```bash
-node src/proxy.js
-# or: npm run proxy
+pip install -e .
 ```
+
+This registers the `deep-ai-analysis` command in your current Python environment.
+
+## Commands
+
+### `proxy`
+
+Starts an HTTP/HTTPS intercepting proxy. Matching traffic is recorded to daily JSONL log files.
+
+```
+Usage: deep-ai-analysis proxy [OPTIONS]
 
 Options:
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--port <n>` | `9999` | Local port to listen on |
-| `--log-dir <path>` | `./logs` | Directory to write JSONL log files |
-| `--redact-keys` | off | Replace `x-api-key` / `authorization` values with `***REDACTED***` |
-| `--cleanup --days <n>` | — | Delete log files older than N days, then exit |
-
-### 3. Configure Claude Code
-
-In a new terminal (before running Claude Code):
-
-```bash
-export ANTHROPIC_BASE_URL=http://localhost:9999
-claude  # or however you launch Claude Code
+  --port INTEGER      Port for the proxy to listen on.  [default: 7788]
+  --output DIRECTORY  Directory where JSONL log files are written.  [default: ./logs]
+  --help              Show this message and exit.
 ```
 
-To stop intercepting:
+**Examples:**
 
 ```bash
-unset ANTHROPIC_BASE_URL
+# Start on default port 7788
+deep-ai-analysis proxy
+
+# Custom port and log directory
+deep-ai-analysis proxy --port 9000 --output ~/ai-logs
 ```
 
-### 4. View Logs (Web UI)
+On startup, the proxy prints the listening address, active filter domains, log directory, and CA certificate path.
 
-Open a browser to view requests visually:
+## Domain Filtering
 
-```bash
-# Start proxy + Web UI together (recommended)
-node src/proxy.js --web
-# Then open: http://localhost:9998
+The domains to record are configured in `deep_ai_analysis/config.py`:
 
-# Or start Web UI standalone (reads existing logs)
-node src/web-server.js
-# or: npm run web
+```python
+RECORD_DOMAINS: list[str] = [
+    "mcli.sankuai.com",
+]
 ```
 
-Web UI options:
+Only traffic to domains in this list is written to disk. All other traffic is proxied transparently without logging.
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--web` | off | Enable Web UI when starting the proxy |
-| `--web-port <n>` | `9998` | Port for the Web UI |
-| `--log-dir <path>` | `./logs` | Log directory to read (standalone mode) |
+## HTTPS Setup
 
-The Web UI provides:
-- Date selector to browse logs by day
-- Searchable request list with method badges, status codes, and duration
-- Detail panel with Request Headers / Request Body / Response Headers / Response tabs
-- JSON syntax highlighting
-- Streaming response display (assembled text + expandable raw SSE chunks)
-- One-click copy for any content section
-
-### 5. View Logs (CLI)
+mitmproxy decrypts HTTPS traffic using a local CA certificate. You need to trust it once:
 
 ```bash
-# List today's requests
-node src/viewer.js list
+# The CA cert is generated on first run at:
+~/.mitmproxy/mitmproxy-ca-cert.pem
 
-# List requests for a specific date
-node src/viewer.js list --date 2024-01-15
+# macOS — trust the cert system-wide:
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain \
+  ~/.mitmproxy/mitmproxy-ca-cert.pem
+```
 
-# Show full details of a request (full UUID or first 4+ chars)
-node src/viewer.js show <id-or-prefix>
+Then configure your HTTP client to use the proxy:
 
-# Print just the AI response text
-node src/viewer.js response <id-or-prefix>
+```bash
+# curl
+curl -x http://127.0.0.1:7788 https://mcli.sankuai.com/...
 
-# Search across the last 7 days
-node src/viewer.js search "keyword"
-node src/viewer.js search "keyword" --in request
-node src/viewer.js search "keyword" --in response
+# Environment variables (affects most CLI tools)
+export http_proxy=http://127.0.0.1:7788
+export https_proxy=http://127.0.0.1:7788
 ```
 
 ## Log Format
 
-Each line in a `logs/YYYY-MM-DD.jsonl` file is a JSON object:
+Logs are written to `logs/YYYY-MM-DD.jsonl` — one JSON object per line.
+
+**Standard request:**
 
 ```json
 {
-  "id": "uuid-v4",
-  "timestamp": "2024-01-15T10:30:00.000Z",
+  "timestamp": "2026-05-08T10:30:00.123456+00:00",
+  "domain": "mcli.sankuai.com",
   "method": "POST",
-  "path": "/v1/messages",
-  "request_headers": { "x-api-key": "sk-..." },
-  "request_body": { "model": "...", "messages": [...] },
-  "status_code": 200,
-  "response_headers": { "content-type": "text/event-stream" },
-  "response_type": "stream",
-  "stream_chunks": ["data: {...}\n\n", "..."],
-  "response_assembled": "Full assistant reply text here",
-  "duration_ms": 3421,
-  "truncated": false
+  "url": "https://mcli.sankuai.com/v1/chat/completions",
+  "request": {
+    "headers": { "content-type": "application/json", "authorization": "Bearer ..." },
+    "body": "{\"model\": \"...\", \"messages\": [...]}"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "body": "{\"id\": \"...\", \"choices\": [...]}"
+  },
+  "is_sse": false
 }
 ```
 
-## Security Notes
+**SSE (streaming) request:**
 
-- Log files are created with `600` permissions (owner read/write only).
-- Use `--redact-keys` if you share log files with others.
-- Log files contain full conversation content and API keys — handle with care.
-- Run `node src/proxy.js --cleanup --days 7` regularly to limit disk usage.
+```json
+{
+  "timestamp": "2026-05-08T10:31:00.000000+00:00",
+  "domain": "mcli.sankuai.com",
+  "method": "POST",
+  "url": "https://mcli.sankuai.com/v1/chat/completions",
+  "request": { "headers": {}, "body": "..." },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "text/event-stream" },
+    "body": "data: {...}\n\ndata: {...}\n\ndata: [DONE]\n\n"
+  },
+  "is_sse": true,
+  "sse_events": [
+    "data: {\"id\":\"...\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}",
+    "data: {\"id\":\"...\",\"choices\":[{\"delta\":{\"content\":\" world\"}}]}",
+    "data: [DONE]"
+  ]
+}
+```
+
+**Query logs with `jq`:**
+
+```bash
+# Show all recorded URLs
+jq -r '.url' logs/2026-05-08.jsonl
+
+# Show only SSE requests
+jq 'select(.is_sse == true)' logs/2026-05-08.jsonl
+
+# Count requests by method
+jq -r '.method' logs/2026-05-08.jsonl | sort | uniq -c
+```

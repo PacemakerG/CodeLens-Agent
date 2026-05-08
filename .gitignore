@@ -1,2 +1,10 @@
 node_modules/
-logs/*.jsonl
+logs/
+certs/
+.DS_Store
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
