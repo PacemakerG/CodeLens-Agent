@@ -152,6 +152,68 @@
     font-family: "SF Mono", "Fira Code", Consolas, monospace; font-size: 11px;
   }
 
+  /* ── HTTP lookup button ── */
+  .turn.user .bubble, .turn.assistant .bubble { position: relative; }
+  .http-btn {
+    position: absolute; top: 6px; right: 8px;
+    background: rgba(31,78,121,0.6); color: #7dd3fc;
+    border: 1px solid #3b82f6; border-radius: 4px;
+    font-size: 10px; padding: 2px 6px; cursor: pointer;
+    white-space: nowrap; opacity: 0.7; transition: opacity .15s;
+  }
+  .http-btn:hover { opacity: 1; background: #1d4ed8; }
+
+  /* ── Modal ── */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.65);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000;
+  }
+  .modal-overlay.hidden { display: none; }
+  .modal {
+    background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+    width: min(800px, 95vw); max-height: 80vh;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .modal-header {
+    padding: 12px 16px; border-bottom: 1px solid #30363d;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .modal-title { font-size: 14px; font-weight: 600; color: #f0f6fc; }
+  .modal-close {
+    background: none; border: none; color: #8b949e; font-size: 18px;
+    cursor: pointer; padding: 0 4px; line-height: 1;
+  }
+  .modal-close:hover { color: #e1e4e8; }
+  .modal-body { overflow-y: auto; padding: 12px 16px; flex: 1; }
+  .http-record {
+    border: 1px solid #30363d; border-radius: 8px; margin-bottom: 12px;
+    overflow: hidden; font-size: 12px;
+  }
+  .http-record-header {
+    background: #0d1117; padding: 8px 12px;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .http-record-ts { color: #8b949e; font-size: 11px; }
+  .http-record-model { color: #79c0ff; font-weight: 600; }
+  .http-record-section { padding: 8px 12px; border-top: 1px solid #21262d; }
+  .http-record-label {
+    font-size: 10px; color: #484f58; text-transform: uppercase;
+    letter-spacing: .5px; margin-bottom: 4px;
+  }
+  .http-record-content {
+    font-family: "SF Mono", "Fira Code", Consolas, monospace;
+    font-size: 11px; color: #adbac7; white-space: pre-wrap; word-break: break-all;
+  }
+  .usage-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .usage-chip {
+    background: #21262d; border-radius: 4px; padding: 2px 8px;
+    font-size: 11px; color: #8b949e;
+  }
+  .usage-chip span { color: #e1e4e8; }
+  .no-records { color: #484f58; font-size: 13px; padding: 20px 0; text-align: center; }
+
   /* ── Scrollbar ── */
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -191,6 +253,17 @@
 
 <!-- Tab bar -->
 <div class="tabbar" id="tabbar"></div>
+
+<!-- HTTP lookup modal -->
+<div class="modal-overlay hidden" id="httpModalOverlay" onclick="closeHttpModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div class="modal-title" id="httpModalTitle">HTTP Requests</div>
+      <button class="modal-close" onclick="closeHttpModal()">×</button>
+    </div>
+    <div class="modal-body" id="httpModalBody"></div>
+  </div>
+</div>
 
 <!-- Panels -->
 <div class="panels" id="panels">
@@ -307,7 +380,7 @@ function renderAll(data) {
   panels.innerHTML = '';
 
   // Main session tab
-  const mainTurns = buildTurns(data.main, false);
+  const mainTurns = buildTurns(data.main, false, data.sessionId);
   addTab(tabbar, panels, 'main', 'Main Session', mainTurns.length, true);
   addPanel(panels, 'main', mainTurns);
   showStats(data.main);
@@ -318,7 +391,7 @@ function renderAll(data) {
       ? truncate(sa.meta.description, 22)
       : sa.agentId.slice(0, 8);
     const saId = `sa-${sa.agentId}`;
-    const saTurns = buildTurns(sa.entries, true);
+    const saTurns = buildTurns(sa.entries, true, data.sessionId);
     addTab(tabbar, panels, saId, label, saTurns.length, false, sa.meta?.agentType);
     addPanel(panels, saId, saTurns);
   }
@@ -418,7 +491,7 @@ function calcStats(entries) {
 }
 
 // ── Build turns ────────────────────────────────────────────────────────────
-function buildTurns(entries, isSubagent) {
+function buildTurns(entries, isSubagent, sessionId) {
   // Filter
   const filtered = entries.filter(e => {
     if (!isSubagent && e.isSidechain) return false;
@@ -447,6 +520,24 @@ function buildTurns(entries, isSubagent) {
     }
   }
 
+  // Build a map: user entry uuid -> next assistant message.id
+  // (the first assistant entry that follows each user prompt turn)
+  const userToMsgId = {};
+  let lastUserUuid = null;
+  for (const e of filtered) {
+    if (e.type === 'user') {
+      const content = e.message?.content;
+      if (!(Array.isArray(content) && content.every(b => b.type === 'tool_result'))) {
+        lastUserUuid = e.uuid;
+      }
+    } else if (e.type === 'assistant' && lastUserUuid) {
+      const msgId = e.message?.id;
+      if (msgId && !userToMsgId[lastUserUuid]) {
+        userToMsgId[lastUserUuid] = msgId;
+      }
+    }
+  }
+
   const turns = [];
   for (const e of filtered) {
     if (e.type === 'user') {
@@ -457,6 +548,9 @@ function buildTurns(entries, isSubagent) {
         role: 'user',
         text: typeof content === 'string' ? content : null,
         timestamp: e.timestamp,
+        uuid: e.uuid || null,
+        sessionId: sessionId || null,
+        assistantMsgId: userToMsgId[e.uuid] || null,
       });
     } else if (e.type === 'assistant') {
       const content = e.message?.content || [];
@@ -471,6 +565,8 @@ function buildTurns(entries, isSubagent) {
         toolUses,
         timestamp: e.timestamp,
         model: e.message?.model,
+        msgId: e.message?.id || null,
+        sessionId: sessionId || null,
       });
     }
   }
@@ -486,6 +582,20 @@ function renderTurn(turn) {
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
     bubble.innerHTML = `<div class="text-block">${escHtml(turn.text || '')}</div>`;
+
+    // Add HTTP lookup button for main session user messages with assistantMsgId
+    if (turn.assistantMsgId && turn.sessionId) {
+      const btn = document.createElement('button');
+      btn.className = 'http-btn';
+      btn.textContent = '查看请求';
+      btn.title = '查看该消息触发的底层 HTTP 请求';
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        fetchHttpRecords(turn.sessionId, turn.assistantMsgId, turn.text || '(no text)');
+      };
+      bubble.appendChild(btn);
+    }
+
     div.appendChild(bubble);
     if (turn.timestamp) {
       const meta = document.createElement('div');
@@ -496,6 +606,20 @@ function renderTurn(turn) {
   } else {
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
+    bubble.style.position = 'relative';
+
+    // HTTP lookup button for assistant turns with msgId
+    if (turn.msgId && turn.sessionId) {
+      const btn = document.createElement('button');
+      btn.className = 'http-btn';
+      btn.textContent = '查看请求';
+      btn.title = '查看该助手消息对应的底层 HTTP 请求';
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        fetchHttpRecords(turn.sessionId, turn.msgId, turn.textBlocks[0] || '(assistant)');
+      };
+      bubble.appendChild(btn);
+    }
 
     // Text blocks
     for (const text of turn.textBlocks) {
@@ -601,6 +725,134 @@ function renderToolCard(tool) {
 
   return card;
 }
+
+// ── HTTP lookup ────────────────────────────────────────────────────────────
+async function fetchHttpRecords(sessionId, messageId, msgText) {
+  const overlay = document.getElementById('httpModalOverlay');
+  const body = document.getElementById('httpModalBody');
+  const title = document.getElementById('httpModalTitle');
+
+  title.textContent = `HTTP 请求 — ${truncate(msgText, 40)}`;
+  body.innerHTML = '<div class="placeholder"><div class="spinner"></div></div>';
+  overlay.classList.remove('hidden');
+
+  try {
+    const resp = await fetch(`${apiBase()}/api/message-http/${sessionId}/${messageId}`);
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${resp.status}`);
+    }
+    const data = await resp.json();
+    showHttpModal(data.records || []);
+  } catch (e) {
+    body.innerHTML = `<div class="error-msg" style="padding:20px">${escHtml(e.message)}</div>`;
+  }
+}
+
+function _makeCollapsibleSection(label, content, collapsed) {
+  const sec = document.createElement('div');
+  sec.className = 'http-record-section';
+
+  const labelEl = document.createElement('div');
+  labelEl.className = 'http-record-label';
+  labelEl.style.cursor = 'pointer';
+  labelEl.style.userSelect = 'none';
+  labelEl.innerHTML = `${label} <span style="color:#58a6ff;font-size:10px">[${collapsed ? '展开' : '收起'}]</span>`;
+  sec.appendChild(labelEl);
+
+  const contentEl = document.createElement('div');
+  contentEl.className = 'http-record-content';
+  if (collapsed) contentEl.style.display = 'none';
+  contentEl.textContent = content;
+  sec.appendChild(contentEl);
+
+  labelEl.onclick = () => {
+    const hidden = contentEl.style.display === 'none';
+    contentEl.style.display = hidden ? '' : 'none';
+    labelEl.querySelector('span').textContent = hidden ? '[收起]' : '[展开]';
+  };
+  return sec;
+}
+
+function showHttpModal(records) {
+  const body = document.getElementById('httpModalBody');
+  if (records.length === 0) {
+    body.innerHTML = '<div class="no-records">未找到对应的 HTTP 请求记录</div>';
+    return;
+  }
+
+  body.innerHTML = '';
+  for (const rec of records) {
+    const card = document.createElement('div');
+    card.className = 'http-record';
+
+    // Header: timestamp + model + message id
+    const model = rec.request_json?.model || '—';
+    const msgId = rec.response_json?.message?.id || '';
+    const header = document.createElement('div');
+    header.className = 'http-record-header';
+    header.innerHTML =
+      `<span class="http-record-ts">${escHtml(rec.timestamp || '')}</span>` +
+      `<span class="http-record-model">${escHtml(model)}</span>` +
+      (msgId ? `<span style="color:#8b949e;font-size:11px">${escHtml(msgId)}</span>` : '');
+    card.appendChild(header);
+
+    // Usage (always visible)
+    const usage = rec.response_json?.message?.usage;
+    if (usage) {
+      const sec = document.createElement('div');
+      sec.className = 'http-record-section';
+      sec.innerHTML = `<div class="http-record-label">Token 用量</div>` +
+        `<div class="usage-chips">` +
+        `<div class="usage-chip">input <span>${(usage.input_tokens || 0).toLocaleString()}</span></div>` +
+        `<div class="usage-chip">output <span>${(usage.output_tokens || 0).toLocaleString()}</span></div>` +
+        `<div class="usage-chip">cache_read <span>${(usage.cache_read_input_tokens || 0).toLocaleString()}</span></div>` +
+        `<div class="usage-chip">cache_create <span>${(usage.cache_creation_input_tokens || 0).toLocaleString()}</span></div>` +
+        `</div>`;
+      card.appendChild(sec);
+    }
+
+    // Response content (visible, collapsible)
+    const contentText = rec.response_json?.message?.content?.text;
+    if (contentText) {
+      card.appendChild(_makeCollapsibleSection('助手回复', contentText, false));
+    }
+
+    // Raw request_json (collapsed by default — can be large)
+    const reqCopy = Object.assign({}, rec.request_json);
+    // Show messages count summary instead of full array inline
+    const msgCount = reqCopy.messages?.length || 0;
+    reqCopy.messages = `[${msgCount} messages — expand raw to see all]`;
+    const reqSummary = JSON.stringify(reqCopy, null, 2);
+    card.appendChild(_makeCollapsibleSection(`请求 (request_json, ${msgCount} messages)`, reqSummary, true));
+
+    // Full request_json with messages (very large, collapsed)
+    card.appendChild(_makeCollapsibleSection(
+      '完整请求 (含所有 messages)',
+      JSON.stringify(rec.request_json, null, 2),
+      true
+    ));
+
+    // Raw response_json (collapsed)
+    card.appendChild(_makeCollapsibleSection(
+      '原始响应 (response_json)',
+      JSON.stringify(rec.response_json, null, 2),
+      true
+    ));
+
+    body.appendChild(card);
+  }
+}
+
+function closeHttpModal(event) {
+  if (event && event.target !== document.getElementById('httpModalOverlay')) return;
+  document.getElementById('httpModalOverlay').classList.add('hidden');
+}
+
+// Close modal on Escape key
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeHttpModal();
+});
 
 // ── Init ───────────────────────────────────────────────────────────────────
 fetchProjects();

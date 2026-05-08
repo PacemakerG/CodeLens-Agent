@@ -34,7 +34,6 @@ def _load_subagents(session_dir: Path) -> list[dict[str, Any]]:
     if not subagents_dir.is_dir():
         return []
     subagents = []
-    # Find all agent JSONL files
     for jsonl_path in sorted(subagents_dir.glob("agent-*.jsonl")):
         agent_id = jsonl_path.stem[len("agent-"):]
         meta_path = subagents_dir / f"agent-{agent_id}.meta.json"
@@ -94,14 +93,49 @@ def get_session(session_id: str, projects_dir: Path) -> dict[str, Any] | None:
     return None
 
 
+def get_message_http(
+    session_id: str,
+    message_id: str,
+    projects_dir: Path,
+    logs_dir: Path,
+) -> list[dict[str, Any]] | None:
+    """Find HTTP records matching an assistant message ID (msg_bdrk_xxx).
+
+    message_id is the assistant entry's message.id field.
+    Matches by response_json.message.id in parsed JSONL files.
+
+    Returns a list of matching parsed records, or None if session not found.
+    Returns [] if no matching records found.
+    """
+    # Verify the session exists
+    session_data = get_session(session_id, projects_dir)
+    if session_data is None:
+        return None
+
+    # Scan all *_parsed.jsonl files in logs_dir, match by response_json.message.id
+    if not logs_dir.is_dir():
+        return []
+
+    matches = []
+    for parsed_path in sorted(logs_dir.glob("*_parsed.jsonl")):
+        for record in _read_jsonl(parsed_path):
+            if record.get("claude_session_id") != session_id:
+                continue
+            rec_msg_id = record.get("response_json", {}).get("message", {}).get("id")
+            if rec_msg_id == message_id:
+                matches.append(record)
+
+    matches.sort(key=lambda r: r.get("timestamp", ""))
+    return matches
+
+
 # ---------------------------------------------------------------------------
 # HTTP request handler
 # ---------------------------------------------------------------------------
 
-def _make_handler(projects_dir: Path):
+def _make_handler(projects_dir: Path, logs_dir: Path):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args: Any) -> None:
-            # Suppress default access log noise
             pass
 
         def _send_json(self, data: Any, status: int = 200) -> None:
@@ -140,6 +174,23 @@ def _make_handler(projects_dir: Path):
                 else:
                     self._send_json(data)
 
+            elif path.startswith("/api/message-http/"):
+                # /api/message-http/<sessionId>/<messageId>
+                rest = path[len("/api/message-http/"):]
+                parts = rest.split("/", 1)
+                if len(parts) != 2:
+                    self._send_json({"error": "invalid path"}, 400)
+                    return
+                session_id, message_id = parts
+                if not re.fullmatch(r"[0-9a-f-]{36}", session_id):
+                    self._send_json({"error": "invalid session id"}, 400)
+                    return
+                records = get_message_http(session_id, message_id, projects_dir, logs_dir)
+                if records is None:
+                    self._send_json({"error": "message not found"}, 404)
+                else:
+                    self._send_json({"records": records})
+
             else:
                 self._send_json({"error": "not found"}, 404)
 
@@ -150,12 +201,13 @@ def _make_handler(projects_dir: Path):
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def run_server(port: int, projects_dir: Path) -> None:
-    handler = _make_handler(projects_dir)
+def run_server(port: int, projects_dir: Path, logs_dir: Path) -> None:
+    handler = _make_handler(projects_dir, logs_dir)
     server = HTTPServer(("127.0.0.1", port), handler)
     print(f"Viewer API listening on http://127.0.0.1:{port}")
     print(f"Projects dir : {projects_dir.resolve()}")
-    print(f"Open viewer  : viewer/index.html  (or http://127.0.0.1:{port}/)")
+    print(f"Logs dir     : {logs_dir.resolve()}")
+    print(f"Open viewer  : viewer/index.html")
     print("Press Ctrl+C to stop.\n")
     try:
         server.serve_forever()
@@ -176,5 +228,10 @@ if __name__ == "__main__":
         type=Path,
         default=Path.home() / ".claude" / "projects",
     )
+    parser.add_argument(
+        "--logs-dir",
+        type=Path,
+        default=Path("./logs"),
+    )
     args = parser.parse_args()
-    run_server(args.port, args.projects_dir)
+    run_server(args.port, args.projects_dir, args.logs_dir)

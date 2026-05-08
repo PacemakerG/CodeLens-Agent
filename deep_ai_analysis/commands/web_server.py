@@ -22,16 +22,21 @@ import click
     type=click.Path(file_okay=False, path_type=Path),
     help="Path to the Claude Code projects directory.",
 )
-def web_server(port: int, projects_dir: Path) -> None:
+@click.option(
+    "--logs-dir",
+    default="./logs",
+    show_default=True,
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Directory containing *_parsed.jsonl files for HTTP lookup.",
+)
+def web_server(port: int, projects_dir: Path, logs_dir: Path) -> None:
     """Start the Claude Code session viewer API server."""
-    # Import here to keep startup fast and avoid issues if viewer/ isn't in path
     import sys
     from pathlib import Path as _Path
 
-    # Add project root to path so viewer/server.py can be imported
     project_root = _Path(__file__).parent.parent.parent
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
 
     from viewer.server import run_server
-    run_server(port, projects_dir)
+    run_server(port, projects_dir, logs_dir)
