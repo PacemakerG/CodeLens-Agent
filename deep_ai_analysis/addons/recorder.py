@@ -12,6 +12,9 @@ from mitmproxy import http
 
 from deep_ai_analysis.config import RECORD_DOMAINS
 
+# Headers that must never be written to log files (lowercase for case-insensitive matching)
+SENSITIVE_HEADERS: frozenset[str] = frozenset({"authorization"})
+
 
 class RecorderAddon:
     """Records matching HTTP flows to a daily JSONL file.
@@ -47,6 +50,10 @@ class RecorderAddon:
 
     def _headers_to_dict(self, headers: Any) -> dict[str, str]:
         return dict(headers)
+
+    def _request_headers_to_dict(self, headers: Any) -> dict[str, str]:
+        """Convert request headers to dict, excluding sensitive headers."""
+        return {k: v for k, v in headers.items() if k.lower() not in SENSITIVE_HEADERS}
 
     # ------------------------------------------------------------------
     # mitmproxy hooks
@@ -101,7 +108,7 @@ class RecorderAddon:
             req_body = flow.request.content.decode("utf-8", errors="replace")
 
         request_data = {
-            "headers": self._headers_to_dict(flow.request.headers),
+            "headers": self._request_headers_to_dict(flow.request.headers),
             "body": req_body,
         }
 
@@ -140,6 +147,7 @@ class RecorderAddon:
         }
         if is_sse:
             record["sse_events"] = sse_events
+            record["sse_content"] = "\n\n".join(sse_events)
 
         try:
             self._append_record(record)

@@ -33,11 +33,15 @@
 - **THEN** 两个域名的请求/响应均被记录
 
 ### Requirement: Record raw request and response
-代理 addon SHALL 在 mitmproxy 的 `response` 钩子中将完整的请求和响应原始内容以 JSONL 格式追加到当天日志文件。
+代理 addon SHALL 在 mitmproxy 的 `response` 钩子中将完整的请求和响应原始内容以 JSONL 格式追加到当天日志文件。记录请求 headers 时，SHALL 过滤掉 `Authorization` header（大小写不敏感），其余 headers 完整保留。
 
 #### Scenario: Record standard HTTP response
 - **WHEN** 一个匹配过滤域名的 HTTP 请求完成（非 SSE）
-- **THEN** 一条 JSON 记录被追加到 `logs/YYYY-MM-DD.jsonl`，包含：请求时间戳（ISO8601）、URL、HTTP 方法、完整请求 headers（dict）、请求 body（字符串）、响应状态码、完整响应 headers（dict）、响应 body（字符串）、`is_sse: false`
+- **THEN** 一条 JSON 记录被追加到 `logs/YYYY-MM-DD.jsonl`，包含：请求时间戳（ISO8601）、URL、HTTP 方法、请求 headers（dict，已排除 `Authorization`）、请求 body（字符串）、响应状态码、完整响应 headers（dict）、响应 body（字符串）、`is_sse: false`
+
+#### Scenario: Authorization header excluded from log
+- **WHEN** 请求携带 `Authorization` header（任意大小写，如 `Authorization`、`authorization`、`AUTHORIZATION`）
+- **THEN** 写入 JSONL 的记录中 `request.headers` 字段不包含该 key，其他 headers 正常保留
 
 #### Scenario: JSONL append mode
 - **WHEN** 同一天内有多条请求被记录
@@ -52,7 +56,7 @@
 - **THEN** 新的请求写入新日期对应的 `YYYY-MM-DD.jsonl` 文件
 
 ### Requirement: SSE stream recording
-代理 addon SHALL 检测并完整记录 SSE（Server-Sent Events）流式响应，连接关闭后将完整记录作为一行追加到 JSONL 文件。
+代理 addon SHALL 检测并完整记录 SSE（Server-Sent Events）流式响应，连接关闭后将完整记录作为一行追加到 JSONL 文件。记录请求 headers 时，SHALL 过滤掉 `Authorization` header（大小写不敏感）。
 
 #### Scenario: Detect SSE response
 - **WHEN** 响应头包含 `content-type: text/event-stream`
@@ -68,7 +72,15 @@
 
 #### Scenario: SSE session complete — write to JSONL
 - **WHEN** SSE 连接关闭（flow 完成）
-- **THEN** 将完整记录作为一行 JSON 追加到当天 JSONL 文件：`is_sse: true`，`sse_events` 包含本次连接所有完整事件的原始文本列表，`response.body` 为所有事件拼接的完整字符串
+- **THEN** 将完整记录作为一行 JSON 追加到当天 JSONL 文件：`is_sse: true`，`sse_events` 包含本次连接所有完整事件的原始文本列表，`response.body` 为所有事件拼接的完整字符串，`sse_content` 为所有 `sse_events` 以 `\n\n` 拼接后的完整字符串，`request.headers` 已排除 `Authorization` header
+
+#### Scenario: sse_content field present in SSE record
+- **WHEN** SSE 连接关闭，记录写入 JSONL
+- **THEN** 记录中包含顶层字段 `sse_content`，其值等于 `"\n\n".join(sse_events)`；普通 HTTP 记录（`is_sse: false`）中不包含 `sse_content` 字段
+
+#### Scenario: SSE Authorization header excluded from log
+- **WHEN** SSE 请求携带 `Authorization` header
+- **THEN** 写入 JSONL 的 SSE 记录中 `request.headers` 字段不包含该 key
 
 ### Requirement: CA certificate guidance
 代理启动时 SHALL 向用户打印 mitmproxy CA 证书的路径和安装指引，以便用户信任 HTTPS 解密。
