@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Log</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #0f1117; color: #e1e4e8;
+    height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  /* ── Top bar ── */
+  .topbar {
+    background: #161b22; border-bottom: 1px solid #30363d;
+    padding: 8px 14px; display: flex; align-items: center;
+    gap: 8px; flex-shrink: 0;
+  }
+  .topbar h1 { font-size: 14px; font-weight: 600; color: #f0f6fc; white-space: nowrap; }
+  .field {
+    background: #0d1117; color: #e1e4e8;
+    border: 1px solid #30363d; border-radius: 5px;
+    padding: 4px 8px; font-size: 12px;
+  }
+  .field:focus { outline: none; border-color: #58a6ff; }
+  select.field { cursor: pointer; }
+  .btn {
+    background: #21262d; color: #e1e4e8;
+    border: 1px solid #30363d; border-radius: 5px;
+    padding: 4px 10px; font-size: 12px; cursor: pointer; white-space: nowrap;
+  }
+  .btn:hover { background: #30363d; }
+  .badge { font-size: 11px; color: #8b949e; white-space: nowrap; }
+  .nav-link { font-size: 12px; color: #58a6ff; text-decoration: none; margin-left: auto; white-space: nowrap; }
+
+  /* ── Main layout ── */
+  .main { flex: 1; display: flex; overflow: hidden; }
+
+  /* ── Left: entry list ── */
+  .list-panel {
+    width: 380px; flex-shrink: 0;
+    border-right: 1px solid #30363d;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .entry-list { flex: 1; overflow-y: auto; }
+
+  /* Tree group header */
+  .tree-group-hdr {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px;
+    background: #161b22; border-bottom: 1px solid #30363d;
+    cursor: pointer; user-select: none; position: sticky; top: 0; z-index: 1;
+  }
+  .tree-arrow { font-size: 10px; color: #8b949e; transition: transform .15s; }
+  .tree-arrow.open { transform: rotate(90deg); }
+  .tree-group-label { font-size: 12px; font-weight: 600; color: #f0f6fc; }
+  .tree-group-desc { font-size: 11px; color: #8b949e; }
+  .tree-group-count { font-size: 10px; color: #6e7681; background: #21262d; border-radius: 8px; padding: 1px 6px; margin-left: auto; }
+  .tree-group-body.hidden { display: none; }
+  .tree-item { padding-left: 18px; }
+
+  /* Turn header (user prompt root) */
+  .turn-hdr {
+    display: flex; align-items: flex-start; gap: 5px;
+    padding: 6px 10px 5px 22px;
+    border-bottom: 1px solid #21262d;
+    cursor: pointer; user-select: none;
+    background: #0f1117;
+  }
+  .turn-hdr:hover { background: #161b22; }
+  .turn-arrow { font-size: 9px; color: #58a6ff; margin-top: 2px; transition: transform .15s; flex-shrink: 0; }
+  .turn-arrow.open { transform: rotate(90deg); }
+  .turn-hdr-content { flex: 1; min-width: 0; }
+  .turn-hdr-row1 { display: flex; align-items: center; gap: 5px; margin-bottom: 2px; }
+  .turn-lineno { font-size: 10px; color: #484f58; font-family: monospace; flex-shrink: 0; }
+  .turn-summary { font-size: 12px; color: #e1e4e8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .turn-count { font-size: 10px; color: #484f58; flex-shrink: 0; }
+  .turn-body.hidden { display: none; }
+  /* Children of a turn — deeper indent with visual distinction */
+  .turn-child {
+    padding-left: 30px;
+    border-left: 2px solid #21262d;
+    margin-left: 10px;
+    background: #0a0e13;
+  }
+  .turn-child:hover { background: #0d1117; }
+  .turn-child.active { background: #111827 !important; border-left-color: #58a6ff; }
+
+  .entry-item {
+    padding: 8px 10px; border-bottom: 1px solid #161b22;
+    cursor: pointer; transition: background .1s;
+  }
+  .entry-item:hover { background: #161b22; }
+  .entry-item.active { background: #1a2535; border-left: 3px solid #58a6ff; padding-left: 7px; }
+
+  .ei-row1 { display: flex; align-items: center; gap: 5px; margin-bottom: 3px; }
+  .ei-ts { font-size: 10px; color: #8b949e; }
+
+  /* Type badges */
+  .type-badge {
+    font-size: 10px; font-weight: 600; padding: 1px 5px;
+    border-radius: 3px; white-space: nowrap;
+  }
+  .type-user     { background: #1a2e1a; color: #56d364; }
+  .type-assistant{ background: #1a2440; color: #79c0ff; }
+  .type-system   { background: #2d1f3a; color: #bc8cff; }
+  .type-attachment { background: #2d2408; color: #e3b341; }
+  .type-permission-mode      { background: #2d1f1f; color: #ffa198; }
+  .type-file-history-snapshot{ background: #1a1a2e; color: #8b8fff; }
+  .type-queue-operation { background: #1d2d1d; color: #7ee787; }
+  .type-other    { background: #21262d; color: #8b949e; }
+
+  .sidechain-badge {
+    font-size: 9px; padding: 1px 4px; border-radius: 3px;
+    background: #30363d; color: #6e7681;
+  }
+  .ei-summary {
+    font-size: 11px; color: #adbac7;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ei-uuid { font-size: 10px; color: #484f58; font-family: monospace; }
+
+  /* ── Right: detail ── */
+  .detail-panel { flex: 1; overflow-y: auto; padding: 14px; }
+  .empty-detail {
+    height: 100%; display: flex; align-items: center;
+    justify-content: center; color: #484f58; font-size: 13px;
+  }
+
+  .detail-meta {
+    display: flex; gap: 8px; align-items: center;
+    margin-bottom: 12px; flex-wrap: wrap;
+  }
+  .detail-type { font-size: 13px; font-weight: 600; color: #f0f6fc; }
+  .detail-ts { font-size: 12px; color: #8b949e; }
+  .detail-uuid { font-size: 11px; color: #484f58; font-family: monospace; }
+
+  /* Section */
+  .section { border: 1px solid #30363d; border-radius: 7px; margin-bottom: 10px; overflow: hidden; }
+  .sec-hdr {
+    background: #161b22; padding: 7px 12px;
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; user-select: none;
+  }
+  .sec-title { font-size: 12px; font-weight: 600; color: #f0f6fc; }
+  .sec-toggle { font-size: 11px; color: #58a6ff; }
+  .sec-body { padding: 10px 12px; border-top: 1px solid #21262d; }
+  .sec-body.hidden { display: none; }
+
+  /* Content blocks */
+  .content-text {
+    font-size: 13px; line-height: 1.65; color: #e1e4e8;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .tool-row {
+    display: flex; gap: 8px; align-items: flex-start;
+    padding: 5px 0; border-bottom: 1px solid #21262d; font-size: 12px;
+  }
+  .tool-row:last-child { border-bottom: none; }
+  .tool-name { color: #79c0ff; font-weight: 600; min-width: 120px; }
+  .tool-input { color: #adbac7; font-family: monospace; font-size: 11px; word-break: break-all; }
+
+  /* Type filter checkboxes */
+  .type-filters { display: flex; gap: 5px; align-items: center; }
+  .type-check {
+    display: flex; align-items: center; gap: 3px;
+    font-size: 11px; cursor: pointer; user-select: none;
+    padding: 2px 7px; border-radius: 4px;
+    border: 1px solid #30363d; background: #0d1117; color: #6e7681;
+    transition: all .1s;
+  }
+  .type-check input { display: none; }
+  .type-check.checked-user     { background: #1a2e1a; border-color: #56d364; color: #56d364; }
+  .type-check.checked-assistant{ background: #1a2440; border-color: #79c0ff; color: #79c0ff; }
+  .type-check.checked-system   { background: #2d1f3a; border-color: #bc8cff; color: #bc8cff; }
+  .type-check.checked-attachment{ background: #2d2408; border-color: #e3b341; color: #e3b341; }
+  .type-check.checked-permission-mode       { background: #2d1f1f; border-color: #ffa198; color: #ffa198; }
+  .type-check.checked-file-history-snapshot { background: #1a1a2e; border-color: #8b8fff; color: #8b8fff; }
+  .type-check.checked-queue-operation { background: #1d2d1d; border-color: #7ee787; color: #7ee787; }
+  .type-check.checked-other    { background: #21262d; border-color: #8b949e; color: #8b949e; }
+
+  /* Line number */
+  .ei-lineno { font-size: 10px; color: #484f58; font-family: monospace; min-width: 28px; text-align: right; flex-shrink: 0; }
+
+  /* Raw JSON — syntax highlighted */
+  .raw-json {
+    font-family: "SF Mono", "Fira Code", Consolas, monospace;
+    font-size: 11px; line-height: 1.6;
+    white-space: pre-wrap; word-break: break-all;
+    background: #0d1117; border-radius: 4px; padding: 10px;
+    max-height: 9999px; overflow-y: auto;
+  }
+  .json-key    { color: #79c0ff; }
+  .json-str    { color: #a5d6ff; }
+  .json-num    { color: #f2cc60; }
+  .json-bool   { color: #ff7b72; }
+  .json-null   { color: #ff7b72; }
+  .json-punct  { color: #e1e4e8; }
+
+  /* Info grid */
+  .info-grid { display: grid; grid-template-columns: 130px 1fr; gap: 5px 10px; font-size: 12px; }
+  .ig-k { color: #8b949e; }
+  .ig-v { color: #e1e4e8; word-break: break-all; font-family: monospace; font-size: 11px; }
+
+  /* Placeholder / spinner */
+  .placeholder { color: #484f58; font-size: 13px; padding: 20px; text-align: center; }
+  .spinner {
+    width: 18px; height: 18px; border: 2px solid #30363d;
+    border-top-color: #58a6ff; border-radius: 50%;
+    animation: spin .6s linear infinite; margin: 24px auto; display: block;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Claude Log</h1>
+  <input class="field" id="apiUrl" type="text" value="http://127.0.0.1:7789" style="width:190px" placeholder="API URL">
+  <select class="field" id="projectSel" style="max-width:200px" onchange="onProjectChange()">
+    <option value="">— project —</option>
+  </select>
+  <select class="field" id="sessionSel" style="max-width:280px" onchange="loadSession()">
+    <option value="">— session —</option>
+  </select>
+  <input class="field" id="searchBox" placeholder="搜索…" oninput="renderList()" style="width:130px">
+  <div class="type-filters" id="typeFilters">
+    <label class="type-check checked-user" data-type="user"><input type="checkbox" checked>user</label>
+    <label class="type-check checked-assistant" data-type="assistant"><input type="checkbox" checked>assistant</label>
+    <label class="type-check" data-type="system"><input type="checkbox">system</label>
+    <label class="type-check" data-type="attachment"><input type="checkbox">attachment</label>
+    <label class="type-check" data-type="permission-mode"><input type="checkbox">permission-mode</label>
+    <label class="type-check" data-type="file-history-snapshot"><input type="checkbox">file-history-snapshot</label>
+    <label class="type-check" data-type="queue-operation"><input type="checkbox">queue-operation</label>
+    <label class="type-check checked-other" data-type="other"><input type="checkbox" checked>other</label>
+  </div>
+  <button class="btn" onclick="init()">刷新</button>
+  <span class="badge" id="countBadge"></span>
+  <a class="nav-link" href="index.html">← 会话查看器</a>
+</div>
+
+<div class="main">
+  <div class="list-panel">
+    <div class="entry-list" id="entryList">
+      <div class="placeholder">选择 project 和 session 后加载</div>
+    </div>
+  </div>
+  <div class="detail-panel" id="detailPanel">
+    <div class="empty-detail">← 点击左侧列表项查看原始日志</div>
+  </div>
+</div>
+
+<script>
+let allProjects = [];
+// Groups: [{id, label, desc, entries: [{...entry, _gid, _idx}]}]
+// allEntries: flat index for detail lookup by _idx
+let groups = [];
+let allEntries = [];
+let selectedIdx = -1;
+// Track collapsed state per group id
+const groupCollapsed = {};
+
+function apiBase() {
+  return (document.getElementById('apiUrl').value || 'http://127.0.0.1:7789').replace(/\/$/, '');
+}
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function fmtTs(ts) {
+  if (!ts) return '';
+  try { return new Date(ts).toLocaleString('zh-CN', {hour12:false}); } catch { return ts; }
+}
+function trunc(s, n) { s = String(s??''); return s.length>n ? s.slice(0,n)+'…' : s; }
+
+// ── Type filter checkboxes ────────────────────────────────────────────────
+document.getElementById('typeFilters').addEventListener('click', e => {
+  const label = e.target.closest('label');
+  if (!label) return;
+  // Toggle checkbox (click on label already toggles it, but we need to update style)
+  // Use setTimeout 0 so checkbox state is updated before we read it
+  setTimeout(() => {
+    const cb = label.querySelector('input');
+    const type = label.dataset.type;
+    if (cb.checked) {
+      label.classList.add(`checked-${type}`);
+    } else {
+      label.classList.remove(`checked-${type}`);
+    }
+    renderList();
+  }, 0);
+});
+
+function getActiveTypes() {
+  const active = new Set();
+  document.querySelectorAll('#typeFilters label').forEach(label => {
+    if (label.querySelector('input').checked) active.add(label.dataset.type);
+  });
+  return active;
+}
+
+// ── JSON syntax highlighter ───────────────────────────────────────────────
+function syntaxHighlightJson(obj) {
+  const json = JSON.stringify(obj, null, 2);
+  // Tokenize and colorize
+  return json.replace(
+    /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?|[{}\[\],:])/g,
+    match => {
+      if (/^"/.test(match)) {
+        if (/:$/.test(match)) {
+          // key
+          return `<span class="json-key">${esc(match)}</span>`;
+        }
+        return `<span class="json-str">${esc(match)}</span>`;
+      }
+      if (/true|false/.test(match)) return `<span class="json-bool">${match}</span>`;
+      if (/null/.test(match)) return `<span class="json-null">${match}</span>`;
+      if (/^-?\d/.test(match)) return `<span class="json-num">${match}</span>`;
+      return `<span class="json-punct">${esc(match)}</span>`;
+    }
+  );
+}
+
+// ── Init: load projects ──────────────────────────────────────────────────
+async function init() {
+  try {
+    const resp = await fetch(`${apiBase()}/api/projects`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    allProjects = await resp.json();
+
+    const sel = document.getElementById('projectSel');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— project —</option>';
+    for (const p of allProjects) {
+      const opt = document.createElement('option');
+      opt.value = p.projectDir;
+      opt.textContent = trunc(p.projectDir, 35);
+      if (p.projectDir === cur) opt.selected = true;
+      sel.appendChild(opt);
+    }
+    if (!cur && allProjects.length === 1) {
+      sel.value = allProjects[0].projectDir;
+      onProjectChange();
+    }
+  } catch(e) {
+    document.getElementById('entryList').innerHTML =
+      `<div class="placeholder" style="color:#f85149">连接失败: ${esc(e.message)}</div>`;
+  }
+}
+
+function onProjectChange() {
+  const projectDir = document.getElementById('projectSel').value;
+  const proj = allProjects.find(p => p.projectDir === projectDir);
+  const sel = document.getElementById('sessionSel');
+  sel.innerHTML = '<option value="">— session —</option>';
+  if (proj) {
+    for (const sid of proj.sessions) {
+      const opt = document.createElement('option');
+      opt.value = sid; opt.textContent = sid;
+      sel.appendChild(opt);
+    }
+    if (proj.sessions.length === 1) {
+      sel.value = proj.sessions[0];
+      loadSession();
+    }
+  }
+}
+
+// ── Load session entries ─────────────────────────────────────────────────
+async function loadSession() {
+  const sessionId = document.getElementById('sessionSel').value;
+  if (!sessionId) return;
+
+  document.getElementById('entryList').innerHTML = '<span class="spinner"></span>';
+  document.getElementById('detailPanel').innerHTML = '<div class="empty-detail">加载中…</div>';
+
+  try {
+    const resp = await fetch(`${apiBase()}/api/session/${sessionId}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+
+    // Build groups: main + each subagent
+    groups = [];
+    allEntries = [];
+
+    // Main session group
+    const mainEntries = (data.main || [])
+      .slice().sort((a,b) => (a._fileLine||0) - (b._fileLine||0));
+    const mainGroup = { id: 'main', label: '🤖 Main Session', desc: data.sessionId?.slice(0,8) || '', entries: [] };
+    for (const e of mainEntries) {
+      const idx = allEntries.length;
+      const tagged = { ...e, _source: 'main', _gid: 'main', _idx: idx };
+      allEntries.push(tagged);
+      mainGroup.entries.push(tagged);
+    }
+    groups.push(mainGroup);
+
+    // Subagent groups
+    for (const sa of data.subagents || []) {
+      const gid = `sa-${sa.agentId}`;
+      const saEntries = (sa.entries || [])
+        .slice().sort((a,b) => (a._fileLine||0) - (b._fileLine||0));
+      groupCollapsed[gid] = true;  // subagents collapsed by default
+      const saGroup = {
+        id: gid,
+        label: sa.meta?.description ? `🔧 ${trunc(sa.meta.description, 28)}` : `🔧 agent-${sa.agentId.slice(0,8)}`,
+        desc: sa.meta?.agentType || '',
+        entries: [],
+      };
+      for (const e of saEntries) {
+        const idx = allEntries.length;
+        const tagged = { ...e, _source: gid, _gid: gid, _agentDesc: sa.meta?.description, _idx: idx };
+        allEntries.push(tagged);
+        saGroup.entries.push(tagged);
+      }
+      groups.push(saGroup);
+    }
+
+    selectedIdx = -1;
+    renderList();
+    document.getElementById('detailPanel').innerHTML = '<div class="empty-detail">← 点击列表项查看原始日志</div>';
+  } catch(e) {
+    document.getElementById('entryList').innerHTML =
+      `<div class="placeholder" style="color:#f85149">加载失败: ${esc(e.message)}</div>`;
+  }
+}
+
+// ── Render list ──────────────────────────────────────────────────────────
+const knownTypes = new Set(['user','assistant','system','attachment','permission-mode','file-history-snapshot','queue-operation']);
+// Track collapsed state per turn key (gid + ':' + turnIdx)
+const turnCollapsed = {};
+
+function entryMatchesFilter(e) {
+  const activeTypes = getActiveTypes();
+  const bucket = knownTypes.has(e.type) ? e.type : 'other';
+  if (!activeTypes.has(bucket)) return false;
+  const q = document.getElementById('searchBox').value.trim().toLowerCase();
+  if (q) {
+    const hay = JSON.stringify(e).toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+  return true;
+}
+
+// Split group entries into turns: each turn starts at a real user-text entry.
+// Also tags each entry with _turnKey for auto-expand on selectEntry.
+function buildTurns(entries, gid) {
+  const turns = [];
+  let current = null;
+  let turnIdx = 0;
+
+  for (const e of entries) {
+    const isRealUser = e.type === 'user' &&
+      typeof e.message?.content === 'string' && e.message.content.trim().length > 0;
+
+    if (isRealUser) {
+      current = { root: e, children: [], _turnIdx: turnIdx++ };
+      const tk = `${gid}:${current._turnIdx}`;
+      e._turnKey = tk;
+      turns.push(current);
+    } else if (current) {
+      e._turnKey = `${gid}:${current._turnIdx}`;
+      current.children.push(e);
+    } else {
+      // Preamble before first user message
+      if (!turns.length) {
+        current = { root: null, children: [], _isPreamble: true, _turnIdx: turnIdx++ };
+        turns.push(current);
+      }
+      e._turnKey = `${gid}:${current._turnIdx}`;
+      current.children.push(e);
+    }
+  }
+  return turns;
+}
+
+// Returns [{group, filteredEntries}]
+function getFilteredGroups() {
+  return groups.map(g => ({
+    group: g,
+    entries: g.entries.filter(entryMatchesFilter),
+  })).filter(({entries}) => entries.length > 0);
+}
+
+function summarize(e) {
+  const type = e.type;
+  if (type === 'user') {
+    const c = e.message?.content;
+    if (typeof c === 'string') return trunc(c, 80);
+    if (Array.isArray(c)) {
+      const texts = c.filter(b => b.type==='text' && !b.text?.startsWith('<system-reminder') && !b.text?.startsWith('<local-command'));
+      if (texts.length) return trunc(texts.map(b=>b.text).join(' '), 80);
+      const types = [...new Set(c.map(b=>b.type))];
+      return `[${types.join(', ')}]`;
+    }
+    return '';
+  }
+  if (type === 'assistant') {
+    const c = e.message?.content || [];
+    const texts = c.filter(b=>b.type==='text').map(b=>trunc(b.text,40));
+    const tools = c.filter(b=>b.type==='tool_use').map(b=>b.name);
+    const parts = [];
+    if (texts.length) parts.push(texts[0]);
+    if (tools.length) parts.push(`[${tools.slice(0,3).join(', ')}${tools.length>3?'…':''}]`);
+    return parts.join(' ') || `[${c.map(b=>b.type).join(', ')}]`;
+  }
+  if (type === 'system') return e.subtype || '';
+  if (type === 'attachment') return e.attachment?.type || '';
+  return type;
+}
+
+function makeEntryEl(e, extraClass) {
+  const idx = e._idx;
+  const el = document.createElement('div');
+  el.className = `entry-item ${extraClass}` + (idx === selectedIdx ? ' active' : '');
+  el.dataset.idx = idx;
+  const typeCls = knownTypes.has(e.type) ? `type-${e.type}` : 'type-other';
+  el.innerHTML =
+    `<div class="ei-row1">` +
+      `<span class="ei-lineno">${e._fileLine != null ? '#'+e._fileLine : ''}</span>` +
+      `<span class="ei-ts">${esc(fmtTs(e.timestamp))}</span>` +
+      `<span class="type-badge ${typeCls}">${esc(e.type||'?')}</span>` +
+    `</div>` +
+    `<div class="ei-summary">${esc(summarize(e))}</div>`;
+  el.onclick = () => selectEntry(idx);
+  return el;
+}
+
+function renderList() {
+  const filteredGroups = getFilteredGroups();
+  const list = document.getElementById('entryList');
+
+  const totalFiltered = filteredGroups.reduce((n, {entries}) => n + entries.length, 0);
+  document.getElementById('countBadge').textContent = `${totalFiltered} / ${allEntries.length}`;
+
+  if (filteredGroups.length === 0) {
+    list.innerHTML = '<div class="placeholder">无匹配条目</div>';
+    return;
+  }
+
+  list.innerHTML = '';
+
+  for (const {group, entries} of filteredGroups) {
+    const isGroupCollapsed = groupCollapsed[group.id] ?? false;
+
+    // ── Group header ────────────────────────────────────────────────────────
+    const grpHdr = document.createElement('div');
+    grpHdr.className = 'tree-group-hdr';
+    grpHdr.dataset.gid = group.id;
+    grpHdr.innerHTML =
+      `<span class="tree-arrow ${isGroupCollapsed ? '' : 'open'}">▶</span>` +
+      `<span class="tree-group-label">${esc(group.label)}</span>` +
+      (group.desc ? `<span class="tree-group-desc">${esc(group.desc)}</span>` : '') +
+      `<span class="tree-group-count">${entries.length}</span>`;
+    grpHdr.onclick = () => {
+      groupCollapsed[group.id] = !groupCollapsed[group.id];
+      const gbody = list.querySelector(`.tree-group-body[data-gid="${group.id}"]`);
+      const arrow = grpHdr.querySelector('.tree-arrow');
+      if (groupCollapsed[group.id]) { gbody.classList.add('hidden'); arrow.classList.remove('open'); }
+      else { gbody.classList.remove('hidden'); arrow.classList.add('open'); }
+    };
+    list.appendChild(grpHdr);
+
+    // ── Group body ──────────────────────────────────────────────────────────
+    const grpBody = document.createElement('div');
+    grpBody.className = 'tree-group-body' + (isGroupCollapsed ? ' hidden' : '');
+    grpBody.dataset.gid = group.id;
+
+    // Build turns from the filtered entries (keep file order)
+    const turns = buildTurns(entries, group.id);
+
+    turns.forEach((turn, turnIdx) => {
+      const turnKey = `${group.id}:${turnIdx}`;
+      // Default collapsed: main session turns start collapsed; subagents already collapsed at group level
+      const isTurnCollapsed = turnCollapsed[turnKey] ?? (group.id === 'main');
+
+      // ── Preamble: flat items, no turn header ─────────────────────────────
+      if (turn._isPreamble) {
+        for (const e of turn.children) {
+          if (!entryMatchesFilter(e)) continue;
+          grpBody.appendChild(makeEntryEl(e, 'tree-item'));
+        }
+        return;
+      }
+
+      // ── Turn header (user root) ──────────────────────────────────────────
+      const rootEntry = turn.root;
+      const hasChildren = turn.children.filter(e => entryMatchesFilter(e)).length > 0;
+      const turnLabel = trunc(rootEntry.message?.content || '', 60);
+      const turnLineNo = rootEntry._fileLine != null ? `#${rootEntry._fileLine}` : '';
+
+      const turnHdr = document.createElement('div');
+      turnHdr.className = 'turn-hdr' + (rootEntry._idx === selectedIdx ? ' active' : '');
+      turnHdr.innerHTML =
+        (hasChildren
+          ? `<span class="turn-arrow ${!isTurnCollapsed ? 'open' : ''}">▶</span>`
+          : `<span style="width:12px;flex-shrink:0"></span>`) +
+        `<div class="turn-hdr-content">` +
+          `<div class="turn-hdr-row1">` +
+            `<span class="turn-lineno">${esc(turnLineNo)}</span>` +
+            `<span class="type-badge type-user">user</span>` +
+            `<span class="turn-count">${hasChildren ? turn.children.length + ' entries' : ''}</span>` +
+          `</div>` +
+          `<div class="turn-summary">${esc(turnLabel)}</div>` +
+        `</div>`;
+
+      grpBody.appendChild(turnHdr);
+
+      // ── Turn body (children, indented) ───────────────────────────────────
+      let turnBody = null;
+      if (hasChildren) {
+        turnBody = document.createElement('div');
+        turnBody.className = 'turn-body' + (isTurnCollapsed ? ' hidden' : '');
+        turnBody.dataset.tkey = turnKey;
+        for (const e of turn.children) {
+          if (!entryMatchesFilter(e)) continue;
+          turnBody.appendChild(makeEntryEl(e, 'turn-child'));
+        }
+        grpBody.appendChild(turnBody);
+      }
+
+      // Bind click after turnBody exists so closure captures it directly
+      turnHdr.onclick = () => {
+        // Update selected highlight without full re-render
+        document.querySelectorAll('.entry-item.active, .turn-hdr.active').forEach(el => el.classList.remove('active'));
+        turnHdr.classList.add('active');
+        selectedIdx = rootEntry._idx;
+        renderDetail(allEntries[rootEntry._idx]);
+
+        if (hasChildren && turnBody) {
+          turnCollapsed[turnKey] = !turnCollapsed[turnKey];
+          const arr = turnHdr.querySelector('.turn-arrow');
+          if (turnCollapsed[turnKey]) { turnBody.classList.add('hidden'); arr.classList.remove('open'); }
+          else { turnBody.classList.remove('hidden'); arr.classList.add('open'); }
+        }
+      };
+    });
+
+    list.appendChild(grpBody);
+  }
+}
+
+// ── Detail ───────────────────────────────────────────────────────────────
+function selectEntry(idx) {
+  selectedIdx = idx;
+  document.querySelectorAll('.entry-item').forEach(el =>
+    el.classList.toggle('active', Number(el.dataset.idx) === idx));
+  renderDetail(allEntries[idx]);
+  // Auto-expand the group containing this entry
+  const e = allEntries[idx];
+  if (e) {
+    let needRender = false;
+    if (groupCollapsed[e._gid]) { groupCollapsed[e._gid] = false; needRender = true; }
+    // Find turn key for this entry and auto-expand if collapsed
+    if (e._turnKey && turnCollapsed[e._turnKey]) { turnCollapsed[e._turnKey] = false; needRender = true; }
+    if (needRender) renderList();
+  }
+}
+
+function mkSection(title, renderFn, collapsed=false) {
+  const sec = document.createElement('div');
+  sec.className = 'section';
+  const hdr = document.createElement('div');
+  hdr.className = 'sec-hdr';
+  hdr.innerHTML = `<span class="sec-title">${title}</span><span class="sec-toggle">${collapsed?'展开':'收起'}</span>`;
+  const body = document.createElement('div');
+  body.className = 'sec-body' + (collapsed?' hidden':'');
+  renderFn(body);
+  hdr.onclick = () => {
+    const h = body.classList.toggle('hidden');
+    hdr.querySelector('.sec-toggle').textContent = h ? '展开' : '收起';
+  };
+  sec.appendChild(hdr); sec.appendChild(body);
+  return sec;
+}
+
+function renderDetail(e) {
+  const panel = document.getElementById('detailPanel');
+  panel.innerHTML = '';
+
+  // Meta header
+  const typeCls = ['user','assistant','system','attachment'].includes(e.type) ? `type-${e.type}` : 'type-other';
+  const meta = document.createElement('div');
+  meta.className = 'detail-meta';
+  meta.innerHTML =
+    `<span class="detail-type"><span class="type-badge ${typeCls}">${esc(e.type||'?')}</span></span>` +
+    (e.timestamp ? `<span class="detail-ts">${esc(fmtTs(e.timestamp))}</span>` : '') +
+    (e.uuid ? `<span class="detail-uuid">${esc(e.uuid)}</span>` : '') +
+    (e._source!=='main' ? `<span class="badge">${esc(e._source)}${e._agentDesc ? ': '+esc(trunc(e._agentDesc,30)) : ''}</span>` : '');
+  panel.appendChild(meta);
+
+  // ── user entry ──────────────────────────────────────────────────────────
+  if (e.type === 'user') {
+    const c = e.message?.content;
+    if (typeof c === 'string') {
+      panel.appendChild(mkSection('消息内容', body => {
+        const d = document.createElement('div');
+        d.className = 'content-text'; d.textContent = c;
+        body.appendChild(d);
+      }));
+    } else if (Array.isArray(c)) {
+      // Group: text blocks (non-system), tool_results
+      const texts = c.filter(b => b.type==='text' && !b.text?.startsWith('<system-reminder') && !b.text?.startsWith('<local-command'));
+      const sysTexts = c.filter(b => b.type==='text' && (b.text?.startsWith('<system-reminder') || b.text?.startsWith('<local-command')));
+      const toolResults = c.filter(b => b.type==='tool_result');
+
+      if (texts.length) {
+        panel.appendChild(mkSection(`用户文本 (${texts.length})`, body => {
+          for (const b of texts) {
+            const d = document.createElement('div');
+            d.className = 'content-text'; d.textContent = b.text;
+            body.appendChild(d);
+          }
+        }));
+      }
+      if (toolResults.length) {
+        panel.appendChild(mkSection(`Tool Results (${toolResults.length})`, body => {
+          for (const b of toolResults) {
+            const row = document.createElement('div');
+            row.className = 'tool-row';
+            const errMark = b.is_error ? ' <span style="color:#f85149">error</span>' : '';
+            row.innerHTML = `<span class="tool-name">${esc(b.tool_use_id||'')}${errMark}</span>`;
+            const content = document.createElement('span');
+            content.className = 'tool-input';
+            content.textContent = typeof b.content === 'string' ? trunc(b.content, 300) : JSON.stringify(b.content);
+            row.appendChild(content);
+            body.appendChild(row);
+          }
+        }, true));
+      }
+      if (sysTexts.length) {
+        panel.appendChild(mkSection(`System Reminders (${sysTexts.length})`, body => {
+          for (const b of sysTexts) {
+            const d = document.createElement('div');
+            d.className = 'content-text'; d.style.fontSize='11px'; d.style.color='#6e7681';
+            d.textContent = trunc(b.text, 500);
+            body.appendChild(d);
+          }
+        }, true));
+      }
+    }
+    // Meta info
+    panel.appendChild(mkSection('条目元数据', body => {
+      body.innerHTML = `<div class="info-grid">
+        <div class="ig-k">uuid</div><div class="ig-v">${esc(e.uuid||'')}</div>
+        <div class="ig-k">promptId</div><div class="ig-v">${esc(e.promptId||'')}</div>
+        <div class="ig-k">parentUuid</div><div class="ig-v">${esc(e.parentUuid||'')}</div>
+        <div class="ig-k">isSidechain</div><div class="ig-v">${e.isSidechain}</div>
+        <div class="ig-k">sessionId</div><div class="ig-v">${esc(e.sessionId||'')}</div>
+        <div class="ig-k">permissionMode</div><div class="ig-v">${esc(e.permissionMode||'')}</div>
+        <div class="ig-k">cwd</div><div class="ig-v">${esc(e.cwd||'')}</div>
+        <div class="ig-k">version</div><div class="ig-v">${esc(e.version||'')}</div>
+      </div>`;
+    }, true));
+  }
+
+  // ── assistant entry ──────────────────────────────────────────────────────
+  else if (e.type === 'assistant') {
+    const c = e.message?.content || [];
+    const texts = c.filter(b=>b.type==='text');
+    const toolUses = c.filter(b=>b.type==='tool_use');
+
+    if (texts.length) {
+      panel.appendChild(mkSection(`文本回复 (${texts.length})`, body => {
+        for (const b of texts) {
+          const d = document.createElement('div');
+          d.className = 'content-text'; d.textContent = b.text;
+          body.appendChild(d);
+        }
+      }));
+    }
+    if (toolUses.length) {
+      panel.appendChild(mkSection(`Tool Calls (${toolUses.length})`, body => {
+        for (const b of toolUses) {
+          const row = document.createElement('div');
+          row.className = 'tool-row';
+          row.innerHTML = `<span class="tool-name">${esc(b.name)}</span>`;
+          const inp = document.createElement('span');
+          inp.className = 'tool-input';
+          inp.textContent = JSON.stringify(b.input, null, 2);
+          row.appendChild(inp);
+          body.appendChild(row);
+        }
+      }, toolUses.length > 3));
+    }
+    // Message metadata
+    const msg = e.message || {};
+    panel.appendChild(mkSection('Message 元数据', body => {
+      body.innerHTML = `<div class="info-grid">
+        <div class="ig-k">message.id</div><div class="ig-v">${esc(msg.id||'')}</div>
+        <div class="ig-k">model</div><div class="ig-v">${esc(msg.model||'')}</div>
+        <div class="ig-k">stop_reason</div><div class="ig-v">${esc(msg.stop_reason||'')}</div>
+        <div class="ig-k">uuid</div><div class="ig-v">${esc(e.uuid||'')}</div>
+        <div class="ig-k">parentUuid</div><div class="ig-v">${esc(e.parentUuid||'')}</div>
+        <div class="ig-k">isSidechain</div><div class="ig-v">${e.isSidechain}</div>
+      </div>`;
+      if (msg.usage) {
+        const u = msg.usage;
+        const chips = document.createElement('div');
+        chips.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-top:8px';
+        for (const [k,v] of Object.entries(u)) {
+          chips.innerHTML += `<span style="background:#21262d;border-radius:4px;padding:2px 8px;font-size:11px;color:#8b949e">${esc(k)} <b style="color:#e1e4e8">${v?.toLocaleString?.()??v}</b></span>`;
+        }
+        body.appendChild(chips);
+      }
+    }, true));
+  }
+
+  // ── system entry ─────────────────────────────────────────────────────────
+  else if (e.type === 'system') {
+    panel.appendChild(mkSection('System 信息', body => {
+      body.innerHTML = `<div class="info-grid">
+        <div class="ig-k">subtype</div><div class="ig-v">${esc(e.subtype||'')}</div>
+        <div class="ig-k">level</div><div class="ig-v">${esc(e.level||'')}</div>
+        <div class="ig-k">stopReason</div><div class="ig-v">${esc(e.stopReason||'')}</div>
+        <div class="ig-k">hookCount</div><div class="ig-v">${esc(e.hookCount??'')}</div>
+      </div>`;
+    }));
+  }
+
+  // ── attachment ────────────────────────────────────────────────────────────
+  else if (e.type === 'attachment') {
+    panel.appendChild(mkSection('Attachment', body => {
+      const att = e.attachment || {};
+      body.innerHTML = `<div class="info-grid">
+        <div class="ig-k">type</div><div class="ig-v">${esc(att.type||'')}</div>
+        <div class="ig-k">hookName</div><div class="ig-v">${esc(att.hookName||'')}</div>
+        <div class="ig-k">hookEvent</div><div class="ig-v">${esc(att.hookEvent||'')}</div>
+      </div>`;
+      if (att.stdout) {
+        const pre = document.createElement('div');
+        pre.className = 'raw-json'; pre.style.marginTop = '8px';
+        let stdoutDisplay = trunc(att.stdout, 2000);
+        try {
+          pre.innerHTML = syntaxHighlightJson(JSON.parse(att.stdout));
+        } catch {
+          pre.textContent = stdoutDisplay;
+        }
+        body.appendChild(pre);
+      }
+    }));
+  }
+
+  // ── Raw JSON (always, default expanded, syntax highlighted) ──────────────
+  const rawCopy = Object.assign({}, e);
+  delete rawCopy._source; delete rawCopy._agentDesc;
+  delete rawCopy._gid; delete rawCopy._idx; delete rawCopy._lineNo; delete rawCopy._fileLine;
+  panel.appendChild(mkSection('原始 JSON', body => {
+    const pre = document.createElement('div');
+    pre.className = 'raw-json';
+    pre.innerHTML = syntaxHighlightJson(rawCopy);
+    body.appendChild(pre);
+  }, false));  // default expanded
+}
+
+// ── Init ────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

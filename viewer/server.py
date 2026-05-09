@@ -18,12 +18,14 @@ from urllib.parse import urlparse
 def _read_jsonl(path: Path) -> list[dict]:
     entries = []
     with path.open(encoding="utf-8") as f:
-        for line in f:
+        for lineno, line in enumerate(f, 1):
             line = line.strip()
             if not line:
                 continue
             try:
-                entries.append(json.loads(line))
+                entry = json.loads(line)
+                entry["_fileLine"] = lineno
+                entries.append(entry)
             except json.JSONDecodeError:
                 pass
     return entries
@@ -129,6 +131,31 @@ def get_message_http(
     return matches
 
 
+def get_logs(
+    logs_dir: Path,
+    session_filter: str | None = None,
+) -> dict[str, Any]:
+    """Return all parsed log records from *_parsed.jsonl files.
+
+    Records are sorted by timestamp descending.
+    Returns {"records": [...], "sessions": [...unique session ids]}.
+    """
+    if not logs_dir.is_dir():
+        return {"records": [], "sessions": []}
+
+    all_records: list[dict] = []
+    for parsed_path in sorted(logs_dir.glob("*_parsed.jsonl")):
+        all_records.extend(_read_jsonl(parsed_path))
+
+    sessions = sorted({r.get("claude_session_id", "") for r in all_records if r.get("claude_session_id")})
+
+    if session_filter:
+        all_records = [r for r in all_records if r.get("claude_session_id") == session_filter]
+
+    all_records.sort(key=lambda r: r.get("timestamp", ""), reverse=True)
+    return {"records": all_records, "sessions": sessions}
+
+
 # ---------------------------------------------------------------------------
 # HTTP request handler
 # ---------------------------------------------------------------------------
@@ -159,6 +186,7 @@ def _make_handler(projects_dir: Path, logs_dir: Path):
         def do_GET(self) -> None:
             parsed = urlparse(self.path)
             path = parsed.path.rstrip("/")
+            query = parsed.query
 
             if path == "/api/projects":
                 self._send_json(get_projects(projects_dir))
@@ -173,6 +201,12 @@ def _make_handler(projects_dir: Path, logs_dir: Path):
                     self._send_json({"error": "session not found"}, 404)
                 else:
                     self._send_json(data)
+
+            elif path == "/api/logs":
+                from urllib.parse import parse_qs
+                params = parse_qs(query)
+                session_filter = params.get("session", [None])[0]
+                self._send_json(get_logs(logs_dir, session_filter))
 
             elif path.startswith("/api/message-http/"):
                 # /api/message-http/<sessionId>/<messageId>
