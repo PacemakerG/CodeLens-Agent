@@ -20,6 +20,22 @@
     gap: 8px; flex-shrink: 0;
   }
   .topbar h1 { font-size: 14px; font-weight: 600; color: #f0f6fc; white-space: nowrap; }
+  .adv-wrap { position: relative; }
+  .adv-btn {
+    background: #21262d; color: #8b949e;
+    border: 1px solid #30363d; border-radius: 5px;
+    padding: 4px 8px; font-size: 12px; cursor: pointer; white-space: nowrap;
+  }
+  .adv-btn:hover { color: #e1e4e8; background: #30363d; }
+  .adv-panel {
+    display: none; position: absolute; top: calc(100% + 6px); left: 0;
+    background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+    padding: 10px 12px; z-index: 100; min-width: 260px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.4);
+  }
+  .adv-panel.open { display: block; }
+  .adv-panel label { font-size: 11px; color: #8b949e; display: block; margin-bottom: 4px; }
+  .adv-panel .field { width: 100%; }
   .field {
     background: #0d1117; color: #e1e4e8;
     border: 1px solid #30363d; border-radius: 5px;
@@ -54,7 +70,7 @@
     background: #161b22; border-bottom: 1px solid #30363d;
     cursor: pointer; user-select: none; position: sticky; top: 0; z-index: 1;
   }
-  .tree-arrow { font-size: 10px; color: #8b949e; transition: transform .15s; }
+  .tree-arrow { font-size: 13px; color: #58a6ff; transition: transform .15s; }
   .tree-arrow.open { transform: rotate(90deg); }
   .tree-group-label { font-size: 12px; font-weight: 600; color: #f0f6fc; }
   .tree-group-desc { font-size: 11px; color: #8b949e; }
@@ -71,7 +87,7 @@
     background: #0f1117;
   }
   .turn-hdr:hover { background: #161b22; }
-  .turn-arrow { font-size: 9px; color: #58a6ff; margin-top: 2px; transition: transform .15s; flex-shrink: 0; }
+  .turn-arrow { font-size: 12px; color: #58a6ff; margin-top: 1px; transition: transform .15s; flex-shrink: 0; }
   .turn-arrow.open { transform: rotate(90deg); }
   .turn-hdr-content { flex: 1; min-width: 0; }
   .turn-hdr-row1 { display: flex; align-items: center; gap: 5px; margin-bottom: 2px; }
@@ -82,12 +98,12 @@
   /* Children of a turn — deeper indent with visual distinction */
   .turn-child {
     padding-left: 30px;
-    border-left: 2px solid #21262d;
+    border-left: 2px solid #e6edf3;
     margin-left: 10px;
-    background: #0a0e13;
+    background: #161b22;
   }
-  .turn-child:hover { background: #0d1117; }
-  .turn-child.active { background: #111827 !important; border-left-color: #58a6ff; }
+  .turn-child:hover { background: #1c2230; }
+  .turn-child.active { background: #1a2535 !important; border-left-color: #58a6ff; }
 
   .entry-item {
     padding: 8px 10px; border-bottom: 1px solid #161b22;
@@ -137,6 +153,16 @@
   .detail-type { font-size: 13px; font-weight: 600; color: #f0f6fc; }
   .detail-ts { font-size: 12px; color: #8b949e; }
   .detail-uuid { font-size: 11px; color: #484f58; font-family: monospace; }
+  .agent-badge {
+    font-size: 10px; padding: 1px 6px; border-radius: 3px;
+    background: #2d1f3a; color: #bc8cff; border: 1px solid #6e40c9;
+    font-family: monospace; white-space: nowrap;
+  }
+  .skill-badge {
+    font-size: 10px; padding: 1px 6px; border-radius: 3px;
+    background: #1a2e1a; color: #56d364; border: 1px solid #2ea043;
+    white-space: nowrap;
+  }
 
   /* Section */
   .section { border: 1px solid #30363d; border-radius: 7px; margin-bottom: 10px; overflow: hidden; }
@@ -147,7 +173,8 @@
   }
   .sec-title { font-size: 12px; font-weight: 600; color: #f0f6fc; }
   .sec-toggle { font-size: 11px; color: #58a6ff; }
-  .sec-body { padding: 10px 12px; border-top: 1px solid #21262d; }
+  .sec-body { padding: 10px 12px; border-top: 1px solid #21262d; background: #161b22; }
+  .sec-body.content-bg { background: #1c2230; }
   .sec-body.hidden { display: none; }
 
   /* Content blocks */
@@ -217,13 +244,29 @@
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+
+  .md-view { font-size: 13px; line-height: 1.7; color: #e1e4e8; padding: 4px 0; }
+  .md-view h1,.md-view h2,.md-view h3 { color: #f0f6fc; margin: 8px 0 4px; font-size: 14px; }
+  .md-view p { margin: 4px 0; }
+  .md-view code { background:#21262d; padding:1px 4px; border-radius:3px; font-family:monospace; font-size:11px; }
+  .md-view pre { background:#0d1117; border:1px solid #21262d; border-radius:4px; padding:8px; margin:6px 0; overflow-x:auto; font-size:11px; font-family:monospace; }
+  .md-view ul,.md-view ol { padding-left:18px; margin:4px 0; }
+  .md-view li { margin:2px 0; }
+  .md-view strong { color:#f0f6fc; }
+  .md-view em { color:#adbac7; }
 </style>
 </head>
 <body>
 
 <div class="topbar">
   <h1>Claude Log</h1>
-  <input class="field" id="apiUrl" type="text" value="http://127.0.0.1:7789" style="width:190px" placeholder="API URL">
+  <div class="adv-wrap" id="advWrap">
+    <button class="adv-btn" onclick="toggleAdv()">⚙ 高级设置</button>
+    <div class="adv-panel" id="advPanel">
+      <label>API URL</label>
+      <input class="field" id="apiUrl" type="text" value="" placeholder="默认: 当前页面地址">
+    </div>
+  </div>
   <select class="field" id="projectSel" style="max-width:200px" onchange="onProjectChange()">
     <option value="">— project —</option>
   </select>
@@ -243,7 +286,6 @@
   </div>
   <button class="btn" onclick="init()">刷新</button>
   <span class="badge" id="countBadge"></span>
-  <a class="nav-link" href="index.html">← 会话查看器</a>
 </div>
 
 <div class="main">
@@ -258,6 +300,26 @@
 </div>
 
 <script>
+function escRaw(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function renderMarkdown(text) {
+  let s = String(text ?? '');
+  s = s.replace(/```[\w]*\n([\s\S]*?)```/g, (_, code) => `<pre>${escRaw(code)}</pre>`);
+  s = s.replace(/`([^`]+)`/g, (_, c) => `<code>${escRaw(c)}</code>`);
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  s = s.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  s = s.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  s = s.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+  s = s.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
+  s = s.replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>');
+  s = s.split(/\n{2,}/).map(p => {
+    p = p.trim();
+    if (!p || p.startsWith('<')) return p;
+    return `<p>${p.replace(/\n/g, '<br>')}</p>`;
+  }).join('');
+  return s;
+}
+
 let allProjects = [];
 // Groups: [{id, label, desc, entries: [{...entry, _gid, _idx}]}]
 // allEntries: flat index for detail lookup by _idx
@@ -267,8 +329,18 @@ let selectedIdx = -1;
 // Track collapsed state per group id
 const groupCollapsed = {};
 
+function toggleAdv() {
+  document.getElementById('advPanel').classList.toggle('open');
+}
+document.addEventListener('click', e => {
+  const wrap = document.getElementById('advWrap');
+  if (wrap && !wrap.contains(e.target)) {
+    document.getElementById('advPanel').classList.remove('open');
+  }
+});
+
 function apiBase() {
-  return (document.getElementById('apiUrl').value || 'http://127.0.0.1:7789').replace(/\/$/, '');
+  return (document.getElementById('apiUrl').value || window.location.origin).replace(/\/$/, '');
 }
 function esc(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -354,19 +426,30 @@ async function init() {
   }
 }
 
+function fmtSessionLabel(s) {
+  const id = typeof s === 'string' ? s : s.id;
+  const first = typeof s === 'object' && s.firstTimestamp ? fmtTs(s.firstTimestamp) : null;
+  const last  = typeof s === 'object' && s.lastTimestamp  ? fmtTs(s.lastTimestamp)  : null;
+  const times = first ? (last && last !== first ? `${first} ~ ${last}` : first) : '';
+  return times ? `${id}  (${times})` : id;
+}
+
 function onProjectChange() {
   const projectDir = document.getElementById('projectSel').value;
   const proj = allProjects.find(p => p.projectDir === projectDir);
   const sel = document.getElementById('sessionSel');
   sel.innerHTML = '<option value="">— session —</option>';
   if (proj) {
-    for (const sid of proj.sessions) {
+    for (const s of proj.sessions) {
+      const id = typeof s === 'string' ? s : s.id;
       const opt = document.createElement('option');
-      opt.value = sid; opt.textContent = sid;
+      opt.value = id;
+      opt.textContent = fmtSessionLabel(s);
+      opt.title = id;
       sel.appendChild(opt);
     }
     if (proj.sessions.length === 1) {
-      sel.value = proj.sessions[0];
+      sel.value = typeof proj.sessions[0] === 'string' ? proj.sessions[0] : proj.sessions[0].id;
       loadSession();
     }
   }
@@ -515,18 +598,44 @@ function summarize(e) {
   return type;
 }
 
+// Extract agentId from entry.toolUseResult.agentId
+function extractAgentId(entry) {
+  if (entry.type !== 'user') return null;
+  return entry.toolUseResult?.agentId || null;
+}
+
 function makeEntryEl(e, extraClass) {
   const idx = e._idx;
   const el = document.createElement('div');
   el.className = `entry-item ${extraClass}` + (idx === selectedIdx ? ' active' : '');
   el.dataset.idx = idx;
   const typeCls = knownTypes.has(e.type) ? `type-${e.type}` : 'type-other';
+  const msgId = e.type === 'assistant' ? e.message?.id : null;
+  const rawLink = msgId
+    ? `<a href="req-resp.html?q=${encodeURIComponent(msgId)}" target="_blank"
+         onclick="event.stopPropagation()"
+         style="font-size:10px;color:#58a6ff;text-decoration:none;padding:1px 5px;
+                border:1px solid #30363d;border-radius:3px;white-space:nowrap;margin-left:4px">原始数据 ↗</a>`
+    : '';
+  const agentId = extractAgentId(e);
+  const agentBadge = agentId
+    ? `<span class="agent-badge">🤖 agent: ${esc(agentId)}</span>`
+    : '';
+  const skillName = e.type === 'user' && e.toolUseResult && e.toolUseResult.commandName
+    ? e.toolUseResult.commandName
+    : null;
+  const skillBadge = skillName
+    ? `<span class="skill-badge">⚡ skill: ${esc(skillName)}</span>`
+    : '';
+  const extraBadges = [agentBadge, skillBadge].filter(Boolean).join(' ');
   el.innerHTML =
     `<div class="ei-row1">` +
       `<span class="ei-lineno">${e._fileLine != null ? '#'+e._fileLine : ''}</span>` +
       `<span class="ei-ts">${esc(fmtTs(e.timestamp))}</span>` +
       `<span class="type-badge ${typeCls}">${esc(e.type||'?')}</span>` +
+      rawLink +
     `</div>` +
+    (extraBadges ? `<div style="margin-top:3px;display:flex;gap:4px;flex-wrap:wrap">${extraBadges}</div>` : '') +
     `<div class="ei-summary">${esc(summarize(e))}</div>`;
   el.onclick = () => selectEntry(idx);
   return el;
@@ -626,7 +735,7 @@ function renderList() {
       }
 
       // Bind click after turnBody exists so closure captures it directly
-      turnHdr.onclick = () => {
+      turnHdr.onclick = (e) => {
         // Update selected highlight without full re-render
         document.querySelectorAll('.entry-item.active, .turn-hdr.active').forEach(el => el.classList.remove('active'));
         turnHdr.classList.add('active');
@@ -634,7 +743,14 @@ function renderList() {
         renderDetail(allEntries[rootEntry._idx]);
 
         if (hasChildren && turnBody) {
-          turnCollapsed[turnKey] = !turnCollapsed[turnKey];
+          const clickedArrow = e.target.closest('.turn-arrow');
+          if (clickedArrow) {
+            // Arrow click: toggle collapse
+            turnCollapsed[turnKey] = !turnCollapsed[turnKey];
+          } else {
+            // Header click: only expand if currently collapsed
+            turnCollapsed[turnKey] = false;
+          }
           const arr = turnHdr.querySelector('.turn-arrow');
           if (turnCollapsed[turnKey]) { turnBody.classList.add('hidden'); arr.classList.remove('open'); }
           else { turnBody.classList.remove('hidden'); arr.classList.add('open'); }
@@ -697,42 +813,74 @@ function renderDetail(e) {
 
   // ── user entry ──────────────────────────────────────────────────────────
   if (e.type === 'user') {
+    // 日志元数据 — top, default expanded
+    panel.appendChild(mkSection('日志元数据', body => {
+      body.innerHTML = `<div class="info-grid">
+        <div class="ig-k">uuid</div><div class="ig-v">${esc(e.uuid||'')}</div>
+        <div class="ig-k">parentUuid</div><div class="ig-v">${esc(e.parentUuid||'')}</div>
+        <div class="ig-k">promptId</div><div class="ig-v">${esc(e.promptId||'')}</div>
+        <div class="ig-k">sessionId</div><div class="ig-v">${esc(e.sessionId||'')}</div>
+        <div class="ig-k">permissionMode</div><div class="ig-v">${esc(e.permissionMode||'')}</div>
+        <div class="ig-k">cwd</div><div class="ig-v">${esc(e.cwd||'')}</div>
+        <div class="ig-k">version</div><div class="ig-v">${esc(e.version||'')}</div>
+      </div>`;
+    }, false));  // default expanded
+
     const c = e.message?.content;
     if (typeof c === 'string') {
-      panel.appendChild(mkSection('消息内容', body => {
+      { const s = mkSection('消息内容', body => {
+        body.classList.add('content-bg');
         const d = document.createElement('div');
-        d.className = 'content-text'; d.textContent = c;
+        d.className = 'md-view'; d.innerHTML = renderMarkdown(c);
         body.appendChild(d);
-      }));
+      }, false); panel.appendChild(s); }
     } else if (Array.isArray(c)) {
-      // Group: text blocks (non-system), tool_results
       const texts = c.filter(b => b.type==='text' && !b.text?.startsWith('<system-reminder') && !b.text?.startsWith('<local-command'));
       const sysTexts = c.filter(b => b.type==='text' && (b.text?.startsWith('<system-reminder') || b.text?.startsWith('<local-command')));
       const toolResults = c.filter(b => b.type==='tool_result');
 
       if (texts.length) {
-        panel.appendChild(mkSection(`用户文本 (${texts.length})`, body => {
+        const s = mkSection(`用户文本 (${texts.length})`, body => {
+          body.classList.add('content-bg');
           for (const b of texts) {
             const d = document.createElement('div');
-            d.className = 'content-text'; d.textContent = b.text;
+            d.className = 'md-view'; d.innerHTML = renderMarkdown(b.text);
             body.appendChild(d);
           }
-        }));
+        }, false);  // default expanded
+        panel.appendChild(s);
       }
       if (toolResults.length) {
-        panel.appendChild(mkSection(`Tool Results (${toolResults.length})`, body => {
+        const s = mkSection(`Tool Results (${toolResults.length})`, body => {
+          body.classList.add('content-bg');
           for (const b of toolResults) {
             const row = document.createElement('div');
             row.className = 'tool-row';
+            row.style.flexDirection = 'column';
             const errMark = b.is_error ? ' <span style="color:#f85149">error</span>' : '';
-            row.innerHTML = `<span class="tool-name">${esc(b.tool_use_id||'')}${errMark}</span>`;
-            const content = document.createElement('span');
-            content.className = 'tool-input';
-            content.textContent = typeof b.content === 'string' ? trunc(b.content, 300) : JSON.stringify(b.content);
-            row.appendChild(content);
+            const hdr = document.createElement('div');
+            hdr.style.cssText = 'font-size:11px;color:#79c0ff;font-weight:600;margin-bottom:4px';
+            hdr.innerHTML = `${esc(b.tool_use_id||'')}${errMark}`;
+            row.appendChild(hdr);
+
+            const rawContent = typeof b.content === 'string' ? b.content : JSON.stringify(b.content, null, 2);
+            let parsed;
+            try { parsed = JSON.parse(rawContent); } catch { parsed = undefined; }
+
+            const contentEl = document.createElement('div');
+            if (parsed !== undefined) {
+              contentEl.className = 'raw-json';
+              contentEl.style.cssText = 'max-height:300px;overflow-y:auto;margin:0';
+              contentEl.innerHTML = syntaxHighlightJson(parsed);
+            } else {
+              contentEl.className = 'md-view';
+              contentEl.innerHTML = renderMarkdown(rawContent);
+            }
+            row.appendChild(contentEl);
             body.appendChild(row);
           }
-        }, true));
+        }, false);  // default expanded
+        panel.appendChild(s);
       }
       if (sysTexts.length) {
         panel.appendChild(mkSection(`System Reminders (${sysTexts.length})`, body => {
@@ -745,35 +893,48 @@ function renderDetail(e) {
         }, true));
       }
     }
-    // Meta info
-    panel.appendChild(mkSection('条目元数据', body => {
-      body.innerHTML = `<div class="info-grid">
-        <div class="ig-k">uuid</div><div class="ig-v">${esc(e.uuid||'')}</div>
-        <div class="ig-k">promptId</div><div class="ig-v">${esc(e.promptId||'')}</div>
-        <div class="ig-k">parentUuid</div><div class="ig-v">${esc(e.parentUuid||'')}</div>
-        <div class="ig-k">isSidechain</div><div class="ig-v">${e.isSidechain}</div>
-        <div class="ig-k">sessionId</div><div class="ig-v">${esc(e.sessionId||'')}</div>
-        <div class="ig-k">permissionMode</div><div class="ig-v">${esc(e.permissionMode||'')}</div>
-        <div class="ig-k">cwd</div><div class="ig-v">${esc(e.cwd||'')}</div>
-        <div class="ig-k">version</div><div class="ig-v">${esc(e.version||'')}</div>
-      </div>`;
-    }, true));
   }
 
   // ── assistant entry ──────────────────────────────────────────────────────
   else if (e.type === 'assistant') {
+    const msg = e.message || {};
+
+    // 日志元数据 — top, default expanded
+    const metaTitle = '日志元数据' + (msg.id ? ` <a href="req-resp.html?q=${encodeURIComponent(msg.id)}" target="_blank" onclick="event.stopPropagation()" style="font-size:10px;color:#58a6ff;text-decoration:none;padding:1px 6px;border:1px solid #30363d;border-radius:3px;white-space:nowrap;font-weight:normal;margin-left:6px">原始数据 ↗</a>` : '');
+    panel.appendChild(mkSection(metaTitle, body => {
+      body.innerHTML = `<div class="info-grid">
+        <div class="ig-k">uuid</div><div class="ig-v">${esc(e.uuid||'')}</div>
+        <div class="ig-k">parentUuid</div><div class="ig-v">${esc(e.parentUuid||'')}</div>
+        <div class="ig-k">message.id</div><div class="ig-v">${esc(msg.id||'')}</div>
+        <div class="ig-k">model</div><div class="ig-v">${esc(msg.model||'')}</div>
+        <div class="ig-k">stop_reason</div><div class="ig-v">${esc(msg.stop_reason||'')}</div>
+        <div class="ig-k">isSidechain</div><div class="ig-v">${e.isSidechain}</div>
+      </div>`;
+      if (msg.usage) {
+        const u = msg.usage;
+        const chips = document.createElement('div');
+        chips.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-top:8px';
+        for (const [k,v] of Object.entries(u)) {
+          chips.innerHTML += `<span style="background:#21262d;border-radius:4px;padding:2px 8px;font-size:11px;color:#8b949e">${esc(k)} <b style="color:#e1e4e8">${v?.toLocaleString?.()??v}</b></span>`;
+        }
+        body.appendChild(chips);
+      }
+    }, false));  // default expanded
+
     const c = e.message?.content || [];
     const texts = c.filter(b=>b.type==='text');
     const toolUses = c.filter(b=>b.type==='tool_use');
 
     if (texts.length) {
-      panel.appendChild(mkSection(`文本回复 (${texts.length})`, body => {
+      const s = mkSection(`文本回复 (${texts.length})`, body => {
+        body.classList.add('content-bg');
         for (const b of texts) {
           const d = document.createElement('div');
-          d.className = 'content-text'; d.textContent = b.text;
+          d.className = 'md-view'; d.innerHTML = renderMarkdown(b.text);
           body.appendChild(d);
         }
-      }));
+      }, false);  // default expanded
+      panel.appendChild(s);
     }
     if (toolUses.length) {
       panel.appendChild(mkSection(`Tool Calls (${toolUses.length})`, body => {
@@ -789,28 +950,6 @@ function renderDetail(e) {
         }
       }, toolUses.length > 3));
     }
-    // Message metadata
-    const msg = e.message || {};
-    const metaTitle = 'Message 元数据' + (msg.id ? ` <a href="req-resp.html?q=${encodeURIComponent(msg.id)}" target="_blank" onclick="event.stopPropagation()" style="font-size:10px;color:#58a6ff;text-decoration:none;padding:1px 6px;border:1px solid #30363d;border-radius:3px;white-space:nowrap;font-weight:normal;margin-left:6px">在请求日志中查看 ↗</a>` : '');
-    panel.appendChild(mkSection(metaTitle, body => {
-      body.innerHTML = `<div class="info-grid">
-        <div class="ig-k">message.id</div><div class="ig-v">${esc(msg.id||'')}</div>
-        <div class="ig-k">model</div><div class="ig-v">${esc(msg.model||'')}</div>
-        <div class="ig-k">stop_reason</div><div class="ig-v">${esc(msg.stop_reason||'')}</div>
-        <div class="ig-k">uuid</div><div class="ig-v">${esc(e.uuid||'')}</div>
-        <div class="ig-k">parentUuid</div><div class="ig-v">${esc(e.parentUuid||'')}</div>
-        <div class="ig-k">isSidechain</div><div class="ig-v">${e.isSidechain}</div>
-      </div>`;
-      if (msg.usage) {
-        const u = msg.usage;
-        const chips = document.createElement('div');
-        chips.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-top:8px';
-        for (const [k,v] of Object.entries(u)) {
-          chips.innerHTML += `<span style="background:#21262d;border-radius:4px;padding:2px 8px;font-size:11px;color:#8b949e">${esc(k)} <b style="color:#e1e4e8">${v?.toLocaleString?.()??v}</b></span>`;
-        }
-        body.appendChild(chips);
-      }
-    }, true));
   }
 
   // ── system entry ─────────────────────────────────────────────────────────

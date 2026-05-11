@@ -6,6 +6,7 @@ import argparse
 import json
 import re
 import sys
+import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
@@ -54,6 +55,30 @@ def _load_subagents(session_dir: Path) -> list[dict[str, Any]]:
     return subagents
 
 
+def _session_timestamps(jsonl_path: Path) -> tuple[str | None, str | None]:
+    """Return (first_timestamp, last_timestamp) from a session JSONL file."""
+    first_ts: str | None = None
+    last_ts: str | None = None
+    try:
+        with jsonl_path.open(encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                    ts = entry.get("timestamp")
+                    if ts:
+                        if first_ts is None:
+                            first_ts = ts
+                        last_ts = ts
+                except json.JSONDecodeError:
+                    pass
+    except OSError:
+        pass
+    return first_ts, last_ts
+
+
 def get_projects(projects_dir: Path) -> list[dict[str, Any]]:
     """Return list of {projectDir, sessions} for all projects."""
     result = []
@@ -62,14 +87,20 @@ def get_projects(projects_dir: Path) -> list[dict[str, Any]]:
     for project_path in sorted(projects_dir.iterdir()):
         if not project_path.is_dir():
             continue
-        sessions = sorted(
-            p.stem for p in project_path.glob("*.jsonl")
-            if re.fullmatch(r"[0-9a-f-]{36}", p.stem)
-        )
-        if sessions:
+        session_infos = []
+        for p in sorted(project_path.glob("*.jsonl")):
+            if not re.fullmatch(r"[0-9a-f-]{36}", p.stem):
+                continue
+            first_ts, last_ts = _session_timestamps(p)
+            session_infos.append({
+                "id": p.stem,
+                "firstTimestamp": first_ts,
+                "lastTimestamp": last_ts,
+            })
+        if session_infos:
             result.append({
                 "projectDir": project_path.name,
-                "sessions": sessions,
+                "sessions": session_infos,
             })
     return result
 
@@ -216,9 +247,19 @@ def get_req_resp_records(logs_dir: Path, session_id: str, date: str) -> list[dic
 # ---------------------------------------------------------------------------
 
 def _make_handler(projects_dir: Path, logs_dir: Path):
+    viewer_dir = Path(__file__).parent
+
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args: Any) -> None:
             pass
+
+        def _send_file(self, file_path: Path) -> None:
+            body = file_path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
 
         def _send_json(self, data: Any, status: int = 200) -> None:
             body = json.dumps(data, ensure_ascii=False).encode("utf-8")
@@ -242,6 +283,16 @@ def _make_handler(projects_dir: Path, logs_dir: Path):
             parsed = urlparse(self.path)
             path = parsed.path.rstrip("/")
             query = parsed.query
+
+            _static: dict[str, str] = {
+                "": "index.html",
+                "/index.html": "index.html",
+                "/claude-log.html": "claude-log.html",
+                "/req-resp.html": "req-resp.html",
+            }
+            if path in _static:
+                self._send_file(viewer_dir / _static[path])
+                return
 
             if path == "/api/projects":
                 self._send_json(get_projects(projects_dir))
@@ -307,11 +358,13 @@ def _make_handler(projects_dir: Path, logs_dir: Path):
 def run_server(port: int, projects_dir: Path, logs_dir: Path) -> None:
     handler = _make_handler(projects_dir, logs_dir)
     server = HTTPServer(("127.0.0.1", port), handler)
+    url = f"http://127.0.0.1:{port}/claude-log.html"
     print(f"Viewer API listening on http://127.0.0.1:{port}")
     print(f"Projects dir : {projects_dir.resolve()}")
     print(f"Logs dir     : {logs_dir.resolve()}")
-    print(f"Open viewer  : viewer/index.html")
+    print(f"Open viewer  : {url}")
     print("Press Ctrl+C to stop.\n")
+    webbrowser.open(url)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

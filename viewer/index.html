@@ -27,6 +27,22 @@
     flex-shrink: 0;
   }
   .topbar h1 { font-size: 14px; font-weight: 600; color: #f0f6fc; white-space: nowrap; }
+  .adv-wrap { position: relative; }
+  .adv-btn {
+    background: #21262d; color: #8b949e;
+    border: 1px solid #30363d; border-radius: 5px;
+    padding: 4px 8px; font-size: 12px; cursor: pointer; white-space: nowrap;
+  }
+  .adv-btn:hover { color: #e1e4e8; background: #30363d; }
+  .adv-panel {
+    display: none; position: absolute; top: calc(100% + 6px); left: 0;
+    background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+    padding: 10px 12px; z-index: 100; min-width: 260px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.4);
+  }
+  .adv-panel.open { display: block; }
+  .adv-panel label { font-size: 11px; color: #8b949e; display: block; margin-bottom: 4px; }
+  .adv-panel .field { width: 100%; }
   .topbar select {
     background: #0d1117; color: #e1e4e8; border: 1px solid #30363d;
     border-radius: 6px; padding: 4px 8px; font-size: 13px; cursor: pointer;
@@ -235,7 +251,13 @@
 <!-- Top bar -->
 <div class="topbar">
   <h1>Claude Session Viewer</h1>
-  <input class="api-url" id="apiUrl" type="text" value="http://127.0.0.1:7789" placeholder="API URL">
+  <div class="adv-wrap" id="advWrap">
+    <button class="adv-btn" onclick="toggleAdv()">⚙ 高级设置</button>
+    <div class="adv-panel" id="advPanel">
+      <label>API URL</label>
+      <input class="field" id="apiUrl" type="text" value="" placeholder="默认: 当前页面地址">
+    </div>
+  </div>
   <select id="projectSel" title="Project">
     <option value="">— select project —</option>
   </select>
@@ -284,8 +306,18 @@ let currentData = null;  // {sessionId, main, subagents}
 let activeTab = 'main';
 
 // ── Utilities ──────────────────────────────────────────────────────────────
+function toggleAdv() {
+  document.getElementById('advPanel').classList.toggle('open');
+}
+document.addEventListener('click', e => {
+  const wrap = document.getElementById('advWrap');
+  if (wrap && !wrap.contains(e.target)) {
+    document.getElementById('advPanel').classList.remove('open');
+  }
+});
+
 function apiBase() {
-  return (document.getElementById('apiUrl').value || 'http://127.0.0.1:7789').replace(/\/$/, '');
+  return (document.getElementById('apiUrl').value || window.location.origin).replace(/\/$/, '');
 }
 
 function escHtml(s) {
