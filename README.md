@@ -38,7 +38,7 @@ Usage: deep-ai-analysis proxy [OPTIONS]
 
 Options:
   --port INTEGER      Port for the proxy to listen on.  [default: 7788]
-  --output DIRECTORY  Directory where JSONL log files are written.  [default: ./logs]
+  --output DIRECTORY  Directory where JSONL log files are written.  [default: ~/.deep-ai-analysis/raw-req-resp]
   --help              Show this message and exit.
 ```
 
@@ -140,6 +140,8 @@ Options:
   --port INTEGER          Port for the viewer API server.  [default: 7789]
   --projects-dir PATH     Path to the Claude Code projects directory.
                           [default: ~/.claude/projects]
+  --req-resp-dir PATH     Directory containing raw HTTP request/response JSONL files.
+                          [default: ~/.deep-ai-analysis/raw-req-resp]
   --help                  Show this message and exit.
 ```
 

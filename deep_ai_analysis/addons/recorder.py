@@ -19,7 +19,7 @@ SENSITIVE_HEADERS: frozenset[str] = frozenset({"authorization"})
 class RecorderAddon:
     """Records matching HTTP flows to a daily JSONL file.
 
-    Each request is written as a single JSON line to ``<output_dir>/YYYY-MM-DD.jsonl``.
+    Each request is written as a single JSON line to ``<output_dir>/<sessionId>/YYYY-MM-DD.jsonl``.
     SSE (text/event-stream) responses are buffered in memory and written as one
     record when the flow completes.
     """
@@ -37,14 +37,14 @@ class RecorderAddon:
     def _should_record(self, flow: http.HTTPFlow) -> bool:
         return flow.request.pretty_host in self._domains
 
-    def _jsonl_path(self) -> Path:
+    def _jsonl_path(self, session_id: str) -> Path:
         today = date.today().isoformat()  # YYYY-MM-DD
-        path = self._output_dir / f"{today}.jsonl"
+        path = self._output_dir / session_id / f"{today}.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
         return path
 
-    def _append_record(self, record: dict[str, Any]) -> None:
-        path = self._jsonl_path()
+    def _append_record(self, record: dict[str, Any], session_id: str) -> None:
+        path = self._jsonl_path(session_id)
         with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
@@ -101,6 +101,9 @@ class RecorderAddon:
 
         timestamp = datetime.now(tz=timezone.utc).isoformat()
 
+        # Extract session ID from request headers for scoped log path
+        session_id = flow.request.headers.get("X-Claude-Code-Session-Id", "unknown")
+
         # Request fields
         try:
             req_body = flow.request.get_text(strict=False) or ""
@@ -149,6 +152,6 @@ class RecorderAddon:
             record["sse_events"] = sse_events
 
         try:
-            self._append_record(record)
+            self._append_record(record, session_id)
         except OSError as exc:
             print(f"[deep-ai-analysis] Failed to write log: {exc}", file=sys.stderr)

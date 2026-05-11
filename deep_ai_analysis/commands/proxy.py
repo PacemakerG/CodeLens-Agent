@@ -8,6 +8,8 @@ from pathlib import Path
 
 import click
 
+from deep_ai_analysis.config import DEFAULT_RAW_LOG_DIR
+
 
 @click.command()
 @click.option(
@@ -19,7 +21,7 @@ import click
 )
 @click.option(
     "--output",
-    default="./logs",
+    default=str(DEFAULT_RAW_LOG_DIR),
     show_default=True,
     type=click.Path(file_okay=False, path_type=Path),
     help="Directory where JSONL log files are written.",

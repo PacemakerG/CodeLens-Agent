@@ -105,11 +105,11 @@
 - **WHEN** 用户执行 `deep-ai-analysis web-server --port 8080 --projects-dir ~/my-projects`
 - **THEN** 在指定端口和目录启动服务
 
-### Requirement: CLI web-server logs-dir option
-`deep-ai-analysis web-server` 子命令 SHALL 支持 `--logs-dir` 选项，指定 parsed JSONL 文件所在目录，默认为 `./logs`。
+### Requirement: CLI web-server req-resp-dir option
+`deep-ai-analysis web-server` 子命令 SHALL 支持 `--req-resp-dir` 选项，指定 parsed JSONL 文件所在目录，默认为 `~/.deep-ai-analysis/raw-req-resp`。
 
-#### Scenario: Custom logs dir
-- **WHEN** 用户执行 `deep-ai-analysis web-server --logs-dir ~/ai-logs`
+#### Scenario: Custom req-resp dir
+- **WHEN** 用户执行 `deep-ai-analysis web-server --req-resp-dir ~/ai-logs`
 - **THEN** 服务启动后使用指定目录查找 parsed JSONL 文件
 
 ### Requirement: HTTP lookup button on messages
