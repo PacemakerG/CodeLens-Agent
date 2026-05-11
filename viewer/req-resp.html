@@ -223,6 +223,7 @@
   <select class="field" id="dateSel" style="width:130px" onchange="loadRecords()">
     <option value="">— date —</option>
   </select>
+  <input class="field" id="searchBox" placeholder="搜索 message ID 或 URL…" oninput="renderList()" style="width:220px">
   <button class="btn" onclick="init()">刷新</button>
   <span class="badge" id="countBadge"></span>
   <div class="nav-links">
@@ -279,6 +280,13 @@ function syntaxHighlightJson(obj) {
 
 // ── Init ─────────────────────────────────────────────────────────────────
 async function init() {
+  // Pre-fill search box from URL query param ?q=
+  const urlQ = new URLSearchParams(location.search).get('q');
+  if (urlQ) {
+    const sb = document.getElementById('searchBox');
+    if (sb) sb.value = urlQ;
+  }
+
   try {
     const resp = await fetch(`${apiBase()}/api/req-resp/sessions`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -355,15 +363,29 @@ async function loadRecords() {
 // ── Render list ────────────────────────────────────────────────────────────
 function renderList() {
   const list = document.getElementById('recordList');
-  document.getElementById('countBadge').textContent = `${allRecords.length} 条`;
+  const q = (document.getElementById('searchBox')?.value || '').trim().toLowerCase();
+
+  const visible = allRecords.map((r, i) => ({ r, i })).filter(({ r }) => {
+    if (!q) return true;
+    const msgId = (r._message_id || '').toLowerCase();
+    const url = (r.url || '').toLowerCase();
+    return msgId.includes(q) || url.includes(q);
+  });
+
+  document.getElementById('countBadge').textContent =
+    q ? `${visible.length} / ${allRecords.length} 条` : `${allRecords.length} 条`;
 
   if (allRecords.length === 0) {
     list.innerHTML = '<div class="placeholder">无记录</div>';
     return;
   }
+  if (visible.length === 0) {
+    list.innerHTML = '<div class="placeholder">无匹配记录</div>';
+    return;
+  }
 
   list.innerHTML = '';
-  allRecords.forEach((r, i) => {
+  visible.forEach(({ r, i }) => {
     const el = document.createElement('div');
     el.className = 'record-item' + (i === selectedIdx ? ' active' : '');
     el.dataset.idx = i;

@@ -177,12 +177,38 @@ def get_req_resp_sessions(logs_dir: Path) -> dict[str, Any]:
     return {"sessions": sessions}
 
 
+def _extract_sse_message_id(sse_events: list[str]) -> str | None:
+    """Parse SSE events and return message.id from message_start event."""
+    for ev in sse_events:
+        for line in ev.split("\n"):
+            if not line.startswith("data:"):
+                continue
+            raw = line[len("data:"):].strip()
+            try:
+                d = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if d.get("type") == "message_start":
+                return d.get("message", {}).get("id")
+    return None
+
+
 def get_req_resp_records(logs_dir: Path, session_id: str, date: str) -> list[dict]:
-    """Return raw records from logs_dir/<session_id>/<date>.jsonl."""
+    """Return raw records from logs_dir/<session_id>/<date>.jsonl.
+
+    SSE records have _message_id injected from the message_start event.
+    Non-SSE records have _message_id set to None.
+    """
     jsonl_path = logs_dir / session_id / f"{date}.jsonl"
     if not jsonl_path.exists():
         return []
-    return _read_jsonl(jsonl_path)
+    records = _read_jsonl(jsonl_path)
+    for r in records:
+        if r.get("is_sse") and r.get("sse_events"):
+            r["_message_id"] = _extract_sse_message_id(r["sse_events"])
+        else:
+            r["_message_id"] = None
+    return records
 
 
 # ---------------------------------------------------------------------------

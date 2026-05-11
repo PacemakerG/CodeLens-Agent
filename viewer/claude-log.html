@@ -791,7 +791,8 @@ function renderDetail(e) {
     }
     // Message metadata
     const msg = e.message || {};
-    panel.appendChild(mkSection('Message 元数据', body => {
+    const metaTitle = 'Message 元数据' + (msg.id ? ` <a href="req-resp.html?q=${encodeURIComponent(msg.id)}" target="_blank" onclick="event.stopPropagation()" style="font-size:10px;color:#58a6ff;text-decoration:none;padding:1px 6px;border:1px solid #30363d;border-radius:3px;white-space:nowrap;font-weight:normal;margin-left:6px">在请求日志中查看 ↗</a>` : '');
+    panel.appendChild(mkSection(metaTitle, body => {
       body.innerHTML = `<div class="info-grid">
         <div class="ig-k">message.id</div><div class="ig-v">${esc(msg.id||'')}</div>
         <div class="ig-k">model</div><div class="ig-v">${esc(msg.model||'')}</div>

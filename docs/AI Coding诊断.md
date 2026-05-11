@@ -130,23 +130,21 @@ ccwhat已经支持的功能：
    4. 6.5前完成通用问题根因定位的详细方案设计
 
 开发记录
-1. ❌补全Cluade本地日志类型，main-agent和sugagent关联关系。
-2. 继续Claude日志的展示
-3. 开发原始请求响应展示的页面
-4. ❌skill作用域解析与展示。yuanxi用skill触发的hook，触发时报上一个skill。
-5. ❌解析和展示context内容、大小、变化。
-6. ❌优化界面展示
-7. ❓发布方案和用户使用方式
+1. ✅补全Cluade本地日志类型，基本补全了，解析规则见 Claude日志清洗.md。
+2. ✅开发原始请求响应展示的页面
+3. ❌skill作用域解析与展示。yuanxi用skill触发的hook，触发时报上一个skill。
+4. ❌优化界面展示：（1）main-agent和sugagent关联关系。（2）message之间的关联。（4）skill的展示（5）tool的展示
+5. ❓发布方案和用户使用方式
    1. python包
    2. node包
    3. 做一个独立的cli
    4. 做一个桌面版
-8. ❓sessionId选择的时候展示名字。
-9. ✅用了open-spec，superpowers未用
-10. ❌结合元析流程 看上层知识库的作业应该展示成什么样子。[元析2.0-试点过程](https://km.sankuai.com/collabpage/2754745692)
+6. ❓sessionId选择的时候展示名字。
+7.  ✅用了open-spec，superpowers未用
+8.  ❌结合元析流程 看上层知识库的作业应该展示成什么样子。[元析2.0-试点过程](https://km.sankuai.com/collabpage/2754745692)
    1. 元析已经完全在使用Git仓库知识库，知识item按规则+自增id编码；原来租户后端那种已经废弃
    2. ❓和淑军对下现在生成过程诊断是怎么在搞的。
-11. ❓原始请求message的增量解析，降低存储大小。
+9.  ❓原始请求message的增量解析（1）解析和展示context内容、大小、变化。（2）降低存储大小。
 
 开发问题记录：
 - 使用openspec+cc生成代码。需求理解有误，实现的代码只代理了cc的域名。

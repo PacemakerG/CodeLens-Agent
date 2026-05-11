@@ -173,15 +173,38 @@
 - **THEN** 返回 `{"sessions": []}`
 
 ### Requirement: Backend API — list req-resp records
-`server.py` SHALL 提供 `GET /api/req-resp/records?session=<id>&date=<YYYY-MM-DD>` 接口，读取对应 JSONL 文件并返回记录列表。
+`server.py` SHALL 提供 `GET /api/req-resp/records?session=<id>&date=<YYYY-MM-DD>` 接口，读取对应 JSONL 文件并返回记录列表。对于 SSE 记录，SHALL 解析 `sse_events` 中的 `message_start` 事件，将 `message.id` 注入为顶层字段 `_message_id`；非 SSE 记录该字段为 `null`。
 
 #### Scenario: Records found
 - **WHEN** 调用 `GET /api/req-resp/records?session=<id>&date=<date>`，对应 JSONL 文件存在
-- **THEN** 返回 `{"records": [...]}` 数组，每条保留原始字段
+- **THEN** 返回 `{"records": [...]}` 数组，每条保留原始字段，SSE 记录额外包含 `_message_id` 字段（格式 `msg_bdrk_xxx`）
+
+#### Scenario: _message_id injected for SSE records
+- **WHEN** 记录 `is_sse` 为 true 且 `sse_events` 包含 `message_start` 事件
+- **THEN** 记录顶层包含 `_message_id` 字段，值等于 `message_start.message.id`
+
+#### Scenario: _message_id null for non-SSE records
+- **WHEN** 记录 `is_sse` 为 false
+- **THEN** 记录顶层 `_message_id` 为 `null`
 
 #### Scenario: File not found
 - **WHEN** 指定 session/date 的 JSONL 文件不存在
 - **THEN** 返回 `{"records": []}` 和 HTTP 200
+
+### Requirement: Raw req-resp viewer search
+`viewer/req-resp.html` SHALL 在顶部提供搜索框，支持按 `_message_id`（精确/前缀匹配）或 URL 路径（模糊匹配）实时过滤左侧记录列表。
+
+#### Scenario: Search by message ID
+- **WHEN** 用户在搜索框输入 `msg_bdrk_` 开头的字符串
+- **THEN** 左侧列表仅显示 `_message_id` 包含该字符串的记录，计数实时更新
+
+#### Scenario: Search by URL
+- **WHEN** 用户在搜索框输入非 `msg_bdrk_` 开头的字符串
+- **THEN** 左侧列表仅显示 URL 包含该字符串的记录
+
+#### Scenario: Clear search
+- **WHEN** 搜索框为空
+- **THEN** 显示全部记录
 
 ### Requirement: Raw req-resp viewer page
 `viewer/req-resp.html` SHALL 提供两栏布局的原始请求/响应日志查看页面。
@@ -197,3 +220,21 @@
 #### Scenario: Record detail
 - **WHEN** 用户点击列表中某条记录
 - **THEN** 右栏展示：基本信息、请求 headers（折叠）、请求 body（折叠）、响应 headers（折叠）、SSE events 列表或响应 body（展开）
+
+### Requirement: Claude Log assistant entry link to req-resp viewer
+`claude-log.html` 的 assistant 条目明细面板中，SHALL 在 `message.id` 旁展示「在请求日志中查看」链接，点击后在新 tab 打开 `req-resp.html?q=<message.id>`。
+
+#### Scenario: Link visible for assistant entries with message.id
+- **WHEN** 右侧明细展示 assistant 条目且 `message.id` 非空
+- **THEN** `message.id` 值旁显示外链按钮，href 为 `req-resp.html?q=<message.id>`，target 为 `_blank`
+
+#### Scenario: Link not shown without message.id
+- **WHEN** assistant 条目的 `message.id` 为空
+- **THEN** 不显示链接
+
+### Requirement: Raw req-resp viewer URL search param
+`viewer/req-resp.html` SHALL 在页面加载时读取 URL query 参数 `?q=`，若存在则自动填入搜索框，并在记录加载完成后触发过滤。
+
+#### Scenario: URL param auto-fills search box
+- **WHEN** 用户通过 `req-resp.html?q=msg_bdrk_xxx` 打开页面
+- **THEN** 搜索框自动填入 `msg_bdrk_xxx`，记录加载完成后列表自动按该值过滤
