@@ -133,7 +133,7 @@ ccwhat已经支持的功能：
 1. ✅补全Cluade本地日志类型，基本补全了，解析规则见 Claude日志清洗.md。
 2. ✅开发原始请求响应展示的页面
 3. ❌skill作用域解析与展示。yuanxi用skill触发的hook，触发时报上一个skill。
-4. ❌优化界面展示：（1）main-agent和sugagent关联关系。（2）message之间的关联。（4）skill的展示（5）tool的展示
+4. ✅优化界面展示：（1）main-agent和sugagent关联关系。（2）message之间的关联。（4）skill的展示（5）tool的展示
 5. ❌原始请求message的增量解析（1）解析和展示context内容、大小、变化。（2）降低存储大小。
 6. ❌补充export和import功能
 7. ✅命令行扩展，支持mc --code 以外的其他参数。
