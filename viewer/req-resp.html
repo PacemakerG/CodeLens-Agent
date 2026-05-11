@@ -210,6 +210,48 @@
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+
+  /* Format button (shown on jt-row hover for long strings) */
+  .fmt-btn {
+    opacity: 0; pointer-events: none;
+    margin-left: 6px; padding: 0 5px; height: 16px; line-height: 16px;
+    font-size: 10px; cursor: pointer;
+    background: #21262d; color: #79c0ff;
+    border: 1px solid #30363d; border-radius: 3px;
+    white-space: nowrap; flex-shrink: 0;
+    transition: opacity .1s;
+  }
+  .jt-row:hover .fmt-btn { opacity: 1; pointer-events: auto; }
+  .fmt-btn:hover { background: #30363d; }
+
+  /* Format overlay */
+  #fmtOverlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.65); z-index: 9999;
+    align-items: center; justify-content: center;
+  }
+  #fmtOverlay.open { display: flex; }
+  .fmt-card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+    width: min(90vw, 900px); max-height: 85vh;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .fmt-card-hdr {
+    background: #0d1117; padding: 8px 14px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid #30363d; flex-shrink: 0;
+  }
+  .fmt-card-title { font-size: 12px; font-weight: 600; color: #f0f6fc; }
+  .fmt-card-mode {
+    font-size: 10px; padding: 1px 6px; border-radius: 3px;
+    background: #21262d; color: #79c0ff; margin-left: 8px;
+  }
+  .fmt-card-close {
+    background: none; border: none; color: #8b949e; font-size: 16px;
+    cursor: pointer; padding: 0 4px; line-height: 1;
+  }
+  .fmt-card-close:hover { color: #e1e4e8; }
+  .fmt-card-body { flex: 1; overflow-y: auto; padding: 12px 14px; }
 </style>
 </head>
 <body>
@@ -229,6 +271,20 @@
   <div class="nav-links">
     <a class="nav-link" href="index.html">会话查看器</a>
     <a class="nav-link" href="claude-log.html">Claude Log</a>
+  </div>
+</div>
+
+<!-- Format overlay (singleton) -->
+<div id="fmtOverlay">
+  <div class="fmt-card">
+    <div class="fmt-card-hdr">
+      <span>
+        <span class="fmt-card-title">格式化预览</span>
+        <span class="fmt-card-mode" id="fmtMode"></span>
+      </span>
+      <button class="fmt-card-close" onclick="closeFormatOverlay()">✕</button>
+    </div>
+    <div class="fmt-card-body" id="fmtBody"></div>
   </div>
 </div>
 
@@ -512,6 +568,47 @@ function mkTextWithMdToggle(text) {
   return wrap;
 }
 
+// ── Format overlay ────────────────────────────────────────────────────────
+const FMT_MIN_LEN = 80;
+
+function showFormatOverlay(str) {
+  const overlay = document.getElementById('fmtOverlay');
+  const body = document.getElementById('fmtBody');
+  const modeEl = document.getElementById('fmtMode');
+  body.innerHTML = '';
+
+  let parsed;
+  try { parsed = JSON.parse(str); } catch { parsed = undefined; }
+
+  if (parsed !== undefined) {
+    modeEl.textContent = 'JSON';
+    body.appendChild(renderJsonTree(parsed, 0, 2));
+  } else {
+    modeEl.textContent = 'Markdown';
+    const div = document.createElement('div');
+    div.className = 'md-view';
+    div.innerHTML = renderMarkdown(str);
+    body.appendChild(div);
+  }
+
+  overlay.classList.add('open');
+}
+
+function closeFormatOverlay() {
+  document.getElementById('fmtOverlay').classList.remove('open');
+}
+
+// Close on backdrop click
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('fmtOverlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeFormatOverlay();
+  });
+});
+// Close on Esc
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeFormatOverlay();
+});
+
 // ── JSON tree renderer (collapsible, default 3 levels open) ───────────────
 function renderJsonTree(value, depth, maxOpen) {
   const el = document.createElement('div');
@@ -530,7 +627,20 @@ function renderJsonTree(value, depth, maxOpen) {
     return el;
   }
   if (typeof value === 'string') {
-    el.innerHTML = `<span class="jt-str">${esc(JSON.stringify(value))}</span>`;
+    const row = document.createElement('div');
+    row.className = 'jt-row';
+    const strSpan = document.createElement('span');
+    strSpan.className = 'jt-str';
+    strSpan.textContent = JSON.stringify(value);
+    row.appendChild(strSpan);
+    if (value.length >= FMT_MIN_LEN) {
+      const btn = document.createElement('button');
+      btn.className = 'fmt-btn';
+      btn.textContent = '格式化';
+      btn.onclick = e => { e.stopPropagation(); showFormatOverlay(value); };
+      row.appendChild(btn);
+    }
+    el.appendChild(row);
     return el;
   }
 
