@@ -17,4 +17,7 @@ deep-ai-analysis = "deep_ai_analysis.cli:cli"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["deep_ai_analysis*"]
+include = ["deep_ai_analysis*", "viewer*"]
+
+[tool.setuptools.package-data]
+viewer = ["*.html"]
