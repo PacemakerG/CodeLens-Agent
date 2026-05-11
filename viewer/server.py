@@ -156,6 +156,35 @@ def get_logs(
     return {"records": all_records, "sessions": sessions}
 
 
+def get_req_resp_sessions(logs_dir: Path) -> dict[str, Any]:
+    """Return all session IDs and their available date files under logs_dir.
+
+    Returns {"sessions": [{"id": "<sessionId>", "dates": ["YYYY-MM-DD", ...]}, ...]}.
+    """
+    if not logs_dir.is_dir():
+        return {"sessions": []}
+
+    sessions = []
+    for session_dir in sorted(logs_dir.iterdir()):
+        if not session_dir.is_dir():
+            continue
+        dates = sorted(
+            p.stem for p in session_dir.glob("*.jsonl")
+            if not p.name.endswith("_parsed.jsonl")
+        )
+        if dates:
+            sessions.append({"id": session_dir.name, "dates": dates})
+    return {"sessions": sessions}
+
+
+def get_req_resp_records(logs_dir: Path, session_id: str, date: str) -> list[dict]:
+    """Return raw records from logs_dir/<session_id>/<date>.jsonl."""
+    jsonl_path = logs_dir / session_id / f"{date}.jsonl"
+    if not jsonl_path.exists():
+        return []
+    return _read_jsonl(jsonl_path)
+
+
 # ---------------------------------------------------------------------------
 # HTTP request handler
 # ---------------------------------------------------------------------------
@@ -224,6 +253,20 @@ def _make_handler(projects_dir: Path, logs_dir: Path):
                     self._send_json({"error": "message not found"}, 404)
                 else:
                     self._send_json({"records": records})
+
+            elif path == "/api/req-resp/sessions":
+                self._send_json(get_req_resp_sessions(logs_dir))
+
+            elif path == "/api/req-resp/records":
+                from urllib.parse import parse_qs
+                params = parse_qs(query)
+                session_id = params.get("session", [""])[0]
+                date = params.get("date", [""])[0]
+                if not session_id or not date:
+                    self._send_json({"error": "session and date are required"}, 400)
+                    return
+                records = get_req_resp_records(logs_dir, session_id, date)
+                self._send_json({"records": records})
 
             else:
                 self._send_json({"error": "not found"}, 404)
