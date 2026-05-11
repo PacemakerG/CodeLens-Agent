@@ -138,11 +138,7 @@ ccwhat已经支持的功能：
 6. ❌补充export和import功能
 7. ✅命令行扩展，支持mc --code 以外的其他参数。
 8. ❓sessionId选择的时候展示名字。
-9. ❓发布方案和用户使用方式
-   1. python包
-   2. node包
-   3. 做一个独立的cli
-   4. 做一个桌面版
+9. ✅发布方案。先打whl，公司，[python包发布还得申请服务](http://km.sankuai.com/collabpage/2654374705)
 10. ✅用了open-spec，superpowers未用
 11. ❌结合元析流程 看上层知识库的作业应该展示成什么样子。[元析2.0-试点过程](https://km.sankuai.com/collabpage/2754745692)
    1. 元析已经完全在使用Git仓库知识库，知识item按规则+自增id编码；原来租户后端那种已经废弃
