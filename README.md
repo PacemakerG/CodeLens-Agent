@@ -9,9 +9,34 @@ CLI toolkit for intercepting and analyzing AI service HTTP/HTTPS traffic.
 
 ## Installation
 
+### 从源码安装（开发模式）
+
 ```bash
+git clone <repo>
+cd deep-ai-analysis
 pip install -e .
 ```
+
+### 从 .whl 文件安装（离线分发）
+
+如果没有 pip 仓库访问，可以先在有源码的机器上打包，再把 `.whl` 文件发给对方安装。
+
+**打包（需要 Python 3.10+ 和 setuptools/wheel）：**
+
+```bash
+python3 -m pip wheel . --no-deps --no-build-isolation -w dist/
+# 生成 dist/deep_ai_analysis-0.1.0-py3-none-any.whl
+```
+
+**安装（对方机器）：**
+
+```bash
+pip install deep_ai_analysis-0.1.0-py3-none-any.whl
+```
+
+安装后即可直接使用 `deep-ai-analysis` 命令，viewer HTML 文件已打包在 wheel 内，无需额外操作。
+
+> **依赖说明：** wheel 不内嵌依赖包，对方环境需能安装 `click>=8.0` 和 `mitmproxy>=10.0`（或提前手动安装）。
 
 This registers the `deep-ai-analysis` command in your current Python environment.
 
@@ -148,12 +173,14 @@ Options:
 **Usage:**
 
 ```bash
-# Start the API server
 deep-ai-analysis web-server
-
-# Then open viewer/index.html in your browser
-open viewer/index.html
 ```
+
+启动后自动在浏览器中打开 `http://127.0.0.1:7789/claude-log.html`。也可手动访问：
+
+- `http://127.0.0.1:7789/claude-log.html` — Claude Code 会话日志查看器
+- `http://127.0.0.1:7789/` — 会话对话查看器
+- `http://127.0.0.1:7789/req-resp.html` — 原始请求响应查看器
 
 The viewer lets you:
 - Browse all Claude Code sessions by project
