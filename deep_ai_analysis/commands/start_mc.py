@@ -10,7 +10,10 @@ from pathlib import Path
 import click
 
 
-@click.command(name="start-mc")
+@click.command(
+    name="start-mc",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
 @click.option(
     "--port",
     default=7788,
@@ -18,7 +21,8 @@ import click
     type=int,
     help="Proxy port to point HTTPS_PROXY at.",
 )
-def start_mc(port: int) -> None:
+@click.argument("extra_args", nargs=-1, type=click.UNPROCESSED)
+def start_mc(port: int, extra_args: tuple) -> None:
     """Launch mc --code with HTTPS_PROXY and NODE_EXTRA_CA_CERTS set."""
     ca_cert = Path.home() / ".mitmproxy" / "mitmproxy-ca-cert.pem"
 
@@ -35,7 +39,7 @@ def start_mc(port: int) -> None:
     env["NODE_EXTRA_CA_CERTS"] = str(ca_cert)
 
     try:
-        result = subprocess.run(["mc", "--code"], env=env)
+        result = subprocess.run(["mc", "--code", *extra_args], env=env)
     except FileNotFoundError:
         click.echo(
             "Error: mc command not found. Please install mc first.",
