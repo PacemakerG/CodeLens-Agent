@@ -35,6 +35,28 @@ if [ -z "$PIP_BIN" ]; then
 fi
 echo "pip 路径：$PIP_BIN"
 
+# mitmproxy 检测
+if command -v mitmproxy &>/dev/null; then
+  MITMPROXY_VERSION=$(mitmproxy --version 2>/dev/null | head -1)
+  MITMPROXY_INFO="已安装 ($MITMPROXY_VERSION)"
+else
+  MITMPROXY_INFO="未安装，将通过 brew 安装"
+fi
+echo "mitmproxy：$MITMPROXY_INFO"
+
+# brew 检测（仅在需要安装 mitmproxy 时）
+if ! command -v mitmproxy &>/dev/null; then
+  if ! command -v brew &>/dev/null; then
+    echo ""
+    echo "❌ 未找到 Homebrew，无法自动安装 mitmproxy。"
+    echo "   请先安装 Homebrew：https://brew.sh"
+    echo "   或手动安装 mitmproxy：pip install mitmproxy"
+    exit 1
+  fi
+  BREW_INFO="$(brew --version | head -1)  ($(command -v brew))"
+  echo "Homebrew：$BREW_INFO"
+fi
+
 echo ""
 echo "将安装 deep-ai-analysis 到上述环境。"
 echo ""
@@ -48,8 +70,15 @@ case "$CONFIRM" in
     ;;
 esac
 
+# 安装 mitmproxy
+if ! command -v mitmproxy &>/dev/null; then
+  echo ""
+  echo "正在通过 brew 安装 mitmproxy..."
+  brew install mitmproxy
+fi
+
 echo ""
-echo "正在安装..."
+echo "正在安装 deep-ai-analysis..."
 "$PIP_BIN" install "$WHL_URL"
 
 echo ""
