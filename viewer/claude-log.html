@@ -620,7 +620,7 @@ function makeEntryEl(e, extraClass) {
   const typeCls = knownTypes.has(e.type) ? `type-${e.type}` : 'type-other';
   const msgId = e.type === 'assistant' ? e.message?.id : null;
   const rawLink = msgId
-    ? `<a href="req-resp.html?q=${encodeURIComponent(msgId)}" target="_blank"
+    ? `<a href="req-resp.html?q=${encodeURIComponent(msgId)}${e.sessionId ? '&session='+encodeURIComponent(e.sessionId) : ''}${e.timestamp ? '&date='+encodeURIComponent(e.timestamp.slice(0,10)) : ''}" target="_blank"
          onclick="event.stopPropagation()"
          style="font-size:10px;color:#58a6ff;text-decoration:none;padding:1px 5px;
                 border:1px solid #30363d;border-radius:3px;white-space:nowrap;margin-left:4px">原始数据 ↗</a>`
@@ -908,7 +908,12 @@ function renderDetail(e) {
     const msg = e.message || {};
 
     // 日志元数据 — top, default expanded
-    const metaTitle = '日志元数据' + (msg.id ? ` <a href="req-resp.html?q=${encodeURIComponent(msg.id)}" target="_blank" onclick="event.stopPropagation()" style="font-size:10px;color:#58a6ff;text-decoration:none;padding:1px 6px;border:1px solid #30363d;border-radius:3px;white-space:nowrap;font-weight:normal;margin-left:6px">原始数据 ↗</a>` : '');
+    const _rawDate = e.timestamp ? e.timestamp.slice(0, 10) : '';
+    const _rawSession = e.sessionId || '';
+    const _rawHref = msg.id
+      ? `req-resp.html?q=${encodeURIComponent(msg.id)}${_rawSession ? '&session='+encodeURIComponent(_rawSession) : ''}${_rawDate ? '&date='+encodeURIComponent(_rawDate) : ''}`
+      : '';
+    const metaTitle = '日志元数据' + (_rawHref ? ` <a href="${_rawHref}" target="_blank" onclick="event.stopPropagation()" style="font-size:10px;color:#58a6ff;text-decoration:none;padding:1px 6px;border:1px solid #30363d;border-radius:3px;white-space:nowrap;font-weight:normal;margin-left:6px">原始数据 ↗</a>` : '');
     panel.appendChild(mkSection(metaTitle, body => {
       body.innerHTML = `<div class="info-grid">
         <div class="ig-k">uuid</div><div class="ig-v">${esc(e.uuid||'')}</div>

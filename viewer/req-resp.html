@@ -368,12 +368,15 @@ function syntaxHighlightJson(obj) {
 
 // ── Init ─────────────────────────────────────────────────────────────────
 async function init() {
+  const params = new URLSearchParams(location.search);
   // Pre-fill search box from URL query param ?q=
-  const urlQ = new URLSearchParams(location.search).get('q');
+  const urlQ = params.get('q');
   if (urlQ) {
     const sb = document.getElementById('searchBox');
     if (sb) sb.value = urlQ;
   }
+  const urlSession = params.get('session');
+  const urlDate = params.get('date');
 
   try {
     const resp = await fetch(`${apiBase()}/api/req-resp/sessions`);
@@ -381,7 +384,7 @@ async function init() {
     const data = await resp.json();
 
     const sel = document.getElementById('sessionSel');
-    const cur = sel.value;
+    const cur = urlSession || sel.value;
     sel.innerHTML = '<option value="">— session —</option>';
     for (const s of data.sessions || []) {
       const opt = document.createElement('option');
@@ -391,8 +394,9 @@ async function init() {
       if (s.id === cur) opt.selected = true;
       sel.appendChild(opt);
     }
-    // Auto-select if single session
-    if (!cur && data.sessions?.length === 1) {
+    if (cur && sel.value === cur) {
+      onSessionChange(urlDate);
+    } else if (!cur && data.sessions?.length === 1) {
       sel.value = data.sessions[0].id;
       onSessionChange();
     }
@@ -403,7 +407,7 @@ async function init() {
 }
 
 // ── Session change ─────────────────────────────────────────────────────────
-function onSessionChange() {
+function onSessionChange(restoreDate) {
   const sel = document.getElementById('sessionSel');
   const opt = sel.options[sel.selectedIndex];
   const dateSel = document.getElementById('dateSel');
@@ -415,6 +419,11 @@ function onSessionChange() {
       const o = document.createElement('option');
       o.value = d; o.textContent = d;
       dateSel.appendChild(o);
+    }
+    if (restoreDate && dates.includes(restoreDate)) {
+      dateSel.value = restoreDate;
+      loadRecords();
+      return;
     }
     // Auto-select latest date
     if (dates.length > 0) {
