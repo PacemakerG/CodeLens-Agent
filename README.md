@@ -44,3 +44,9 @@ deep-ai-analysis start-mc
 # 终端 3 - 浏览器查看AI工作内容
 deep-ai-analysis web-server
 ```
+
+## 命令说明
+
+```bash
+deep-ai-analysis --help
+```
