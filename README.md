@@ -17,6 +17,19 @@ cd deep-ai-analysis
 pip install -e .
 ```
 
+### 一键安装脚本
+
+```bash
+bash <(curl -s https://msstest.sankuai.com/ad-dqe-public/ai-coding-analysis/install.sh)
+```
+
+或者手动下载后执行：
+
+```bash
+curl -O https://msstest.sankuai.com/ad-dqe-public/ai-coding-analysis/install.sh
+bash install.sh
+```
+
 ### 从 .whl 文件安装（离线分发）
 
 如果没有 pip 仓库访问，可以先在有源码的机器上打包，再把 `.whl` 文件发给对方安装。
