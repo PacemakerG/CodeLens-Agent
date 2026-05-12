@@ -267,7 +267,7 @@
       <input class="field" id="apiUrl" type="text" value="" placeholder="默认: 当前页面地址">
     </div>
   </div>
-  <select class="field" id="projectSel" style="max-width:200px" onchange="onProjectChange()">
+  <select class="field" id="projectSel" onchange="onProjectChange()">
     <option value="">— project —</option>
   </select>
   <select class="field" id="sessionSel" style="max-width:280px" onchange="loadSession()">
@@ -407,18 +407,22 @@ async function init() {
     allProjects = await resp.json();
 
     const sel = document.getElementById('projectSel');
-    const cur = sel.value;
+    const curProject = sel.value;
+    const curSession = document.getElementById('sessionSel').value;
     sel.innerHTML = '<option value="">— project —</option>';
     for (const p of allProjects) {
       const opt = document.createElement('option');
       opt.value = p.projectDir;
-      opt.textContent = trunc(p.projectDir, 35);
-      if (p.projectDir === cur) opt.selected = true;
+      opt.textContent = p.projectDir;
+      if (p.projectDir === curProject) opt.selected = true;
       sel.appendChild(opt);
     }
-    if (!cur && allProjects.length === 1) {
+    if (!curProject && allProjects.length === 1) {
       sel.value = allProjects[0].projectDir;
       onProjectChange();
+    } else if (curProject) {
+      // Refresh session list, restore previous session selection, reload entries
+      onProjectChange(curSession);
     }
   } catch(e) {
     document.getElementById('entryList').innerHTML =
@@ -434,7 +438,7 @@ function fmtSessionLabel(s) {
   return times ? `${id}  (${times})` : id;
 }
 
-function onProjectChange() {
+function onProjectChange(restoreSession) {
   const projectDir = document.getElementById('projectSel').value;
   const proj = allProjects.find(p => p.projectDir === projectDir);
   const sel = document.getElementById('sessionSel');
@@ -447,6 +451,10 @@ function onProjectChange() {
       opt.textContent = fmtSessionLabel(s);
       opt.title = id;
       sel.appendChild(opt);
+    }
+    if (restoreSession) {
+      sel.value = restoreSession;
+      if (sel.value) { loadSession(); return; }
     }
     if (proj.sessions.length === 1) {
       sel.value = typeof proj.sessions[0] === 'string' ? proj.sessions[0] : proj.sessions[0].id;

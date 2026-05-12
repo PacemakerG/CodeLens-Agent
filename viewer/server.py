@@ -88,7 +88,7 @@ def get_projects(projects_dir: Path) -> list[dict[str, Any]]:
         if not project_path.is_dir():
             continue
         session_infos = []
-        for p in sorted(project_path.glob("*.jsonl")):
+        for p in project_path.glob("*.jsonl"):
             if not re.fullmatch(r"[0-9a-f-]{36}", p.stem):
                 continue
             first_ts, last_ts = _session_timestamps(p)
@@ -97,6 +97,7 @@ def get_projects(projects_dir: Path) -> list[dict[str, Any]]:
                 "firstTimestamp": first_ts,
                 "lastTimestamp": last_ts,
             })
+        session_infos.sort(key=lambda s: s["lastTimestamp"] or "", reverse=True)
         if session_infos:
             result.append({
                 "projectDir": project_path.name,
