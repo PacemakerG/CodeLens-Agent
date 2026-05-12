@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -11,6 +12,10 @@ from typing import Any
 from mitmproxy import http
 
 from deep_ai_analysis.config import RECORD_DOMAINS
+
+# Output directory is passed via environment variable when launched via mitmdump CLI
+_DEFAULT_OUTPUT_DIR = Path.home() / ".deep-ai-analysis" / "raw-req-resp"
+_OUTPUT_DIR = Path(os.environ.get("DAA_OUTPUT_DIR", str(_DEFAULT_OUTPUT_DIR)))
 
 # Headers that must never be written to log files (lowercase for case-insensitive matching)
 SENSITIVE_HEADERS: frozenset[str] = frozenset({"authorization"})
@@ -24,8 +29,8 @@ class RecorderAddon:
     record when the flow completes.
     """
 
-    def __init__(self, output_dir: Path) -> None:
-        self._output_dir = output_dir
+    def __init__(self, output_dir: Path | None = None) -> None:
+        self._output_dir = output_dir if output_dir is not None else _OUTPUT_DIR
         self._domains: list[str] = RECORD_DOMAINS
         # Per-flow SSE state: flow_id -> {"events": [...], "buffer": ""}
         self._sse_buffers: dict[str, dict[str, Any]] = {}
@@ -155,3 +160,7 @@ class RecorderAddon:
             self._append_record(record, session_id)
         except OSError as exc:
             print(f"[deep-ai-analysis] Failed to write log: {exc}", file=sys.stderr)
+
+
+# Module-level addon instance required by `mitmdump -s <this_file>`
+addons = [RecorderAddon()]

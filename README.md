@@ -5,7 +5,7 @@
 ## 环境要求
 
 - Python 3.10+
-- [mitmproxy](https://mitmproxy.org/)（作为依赖自动安装）
+- [mitmproxy](https://mitmproxy.org/)（通过 `brew install mitmproxy` 安装）
 
 ## 安装
 
