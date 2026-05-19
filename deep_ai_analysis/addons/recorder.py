@@ -11,14 +11,20 @@ from typing import Any
 
 from mitmproxy import http
 
-from deep_ai_analysis.config import RECORD_DOMAINS
-
 # Output directory is passed via environment variable when launched via mitmdump CLI
 _DEFAULT_OUTPUT_DIR = Path.home() / ".deep-ai-analysis" / "raw-req-resp"
 _OUTPUT_DIR = Path(os.environ.get("DAA_OUTPUT_DIR", str(_DEFAULT_OUTPUT_DIR)))
+_DEFAULT_RECORD_DOMAINS = ["mcli.sankuai.com"]
 
 # Headers that must never be written to log files (lowercase for case-insensitive matching)
 SENSITIVE_HEADERS: frozenset[str] = frozenset({"authorization"})
+
+
+def _record_domains_from_env() -> list[str]:
+    raw_domains = os.environ.get("DAA_RECORD_DOMAINS")
+    if raw_domains is None:
+        return list(_DEFAULT_RECORD_DOMAINS)
+    return [domain.strip() for domain in raw_domains.split(",") if domain.strip()]
 
 
 class RecorderAddon:
@@ -31,7 +37,7 @@ class RecorderAddon:
 
     def __init__(self, output_dir: Path | None = None) -> None:
         self._output_dir = output_dir if output_dir is not None else _OUTPUT_DIR
-        self._domains: list[str] = RECORD_DOMAINS
+        self._domains: list[str] = _record_domains_from_env()
         # Per-flow SSE state: flow_id -> {"events": [...], "buffer": ""}
         self._sse_buffers: dict[str, dict[str, Any]] = {}
 
