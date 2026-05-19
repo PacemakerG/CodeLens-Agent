@@ -131,17 +131,17 @@ ccwhat已经支持的功能：
 
 开发记录
 1. ❌补充export和import功能. 赶快做。按用户区分。区分yuanxi流程和普通流程。
-2. ✅补全Cluade本地日志类型，基本补全了，解析规则见 Claude日志清洗.md。
-3. ✅开发原始请求响应展示的页面
-4. ❌skill作用域解析与展示。yuanxi用skill触发的hook，触发时报上一个skill。
+   1. 一天100MB的请求响应日志。压缩率大概50%。
+2. ❌skill作用域解析与展示。yuanxi用skill触发的hook，触发时报上一个skill。
+3. ✅补全Cluade本地日志类型，基本补全了，解析规则见 Claude日志清洗.md。
+4. ✅开发原始请求响应展示的页面
 5. ✅优化界面展示：（1）main-agent和sugagent关联关系。（2）message之间的关联。（4）skill的展示（5）tool的展示
 6. ❌原始请求message的增量解析（1）解析和展示context内容、大小、变化。（2）降低存储大小。
-7. 
-8. ✅命令行扩展，支持mc --code 以外的其他参数。
-9. ❓sessionId选择的时候展示名字。
-10. ✅发布方案。先打whl，公司，[python包发布还得申请服务](http://km.sankuai.com/collabpage/2654374705)
-11. ✅用了open-spec，superpowers未用
-12. ❌结合元析流程 看上层知识库的作业应该展示成什么样子。[元析2.0-试点过程](https://km.sankuai.com/collabpage/2754745692)
+7. ✅命令行扩展，支持mc --code 以外的其他参数。
+8. ❓sessionId选择的时候展示名字。
+9.  ✅发布方案。先打whl，公司，[python包发布还得申请服务](http://km.sankuai.com/collabpage/2654374705)
+10. ✅用了open-spec，superpowers未用
+11. ❌结合元析流程 看上层知识库的作业应该展示成什么样子。[元析2.0-试点过程](https://km.sankuai.com/collabpage/2754745692)
    1. 元析已经完全在使用Git仓库知识库，知识item按规则+自增id编码；原来租户后端那种已经废弃
    2. ❓和淑军对下现在生成过程诊断是怎么在搞的。
 
@@ -183,3 +183,6 @@ CC内部机制：
 8. ✅CC日志格式和解析规则
 
 
+
+yuanxi通过skill的触发拆分环节。上报status内的内容关联session和需求。
+auto compact可能可以通过compact的http请求、subtype为compact_boundary的日志切分。
