@@ -47,6 +47,7 @@ def proxy(port: int, output: Path) -> None:
 
     env = os.environ.copy()
     env["DAA_OUTPUT_DIR"] = str(output.resolve())
+    env["DAA_RECORD_DOMAINS"] = ",".join(RECORD_DOMAINS)
 
     click.echo(f"Proxy listening on http://127.0.0.1:{port}")
     click.echo(f"Recording domains : {domains_str}")
