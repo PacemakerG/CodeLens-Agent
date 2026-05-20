@@ -53,6 +53,31 @@
   .nav-links { margin-left: auto; display: flex; gap: 10px; }
   .nav-link { font-size: 12px; color: #58a6ff; text-decoration: none; white-space: nowrap; }
 
+  /* ── Stats bar ── */
+  .stats-bar {
+    display: none; background: #0d1117;
+    border-bottom: 1px solid #30363d;
+    padding: 8px 14px; flex-shrink: 0;
+    gap: 0;
+  }
+  .stats-bar.visible { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; }
+  .stats-group { display: flex; align-items: center; gap: 12px; }
+  .stats-group + .stats-group { padding-left: 20px; border-left: 1px solid #21262d; }
+  .stat-item { display: flex; flex-direction: column; }
+  .stat-label { font-size: 10px; color: #484f58; margin-bottom: 1px; }
+  .stat-value { font-size: 13px; font-weight: 600; color: #e1e4e8; font-family: monospace; }
+  .stat-value.accent { color: #79c0ff; }
+  .sparkline-wrap { display: flex; align-items: center; gap: 6px; padding-left: 20px; border-left: 1px solid #21262d; position: relative; }
+  .sparkline-label { font-size: 10px; color: #484f58; white-space: nowrap; }
+  .spark-tooltip {
+    display: none; position: fixed;
+    background: #1c2230; border: 1px solid #30363d; border-radius: 4px;
+    padding: 4px 8px; font-size: 11px; color: #e1e4e8; font-family: monospace;
+    pointer-events: none; white-space: nowrap; z-index: 200;
+    box-shadow: 0 2px 8px rgba(0,0,0,.4);
+  }
+  .spark-tooltip.show { display: block; }
+
   /* ── Main layout ── */
   .main { flex: 1; display: flex; overflow: hidden; }
 
@@ -279,6 +304,10 @@
     <div class="adv-panel" id="advPanel">
       <label>API URL</label>
       <input class="field" id="apiUrl" type="text" value="" placeholder="默认: 当前页面地址">
+      <div style="margin-top:8px;display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="filterTitleReq" checked onchange="renderList();renderStats()">
+        <label for="filterTitleReq" style="font-size:11px;color:#e1e4e8;cursor:pointer;margin:0">过滤 title 生成请求</label>
+      </div>
     </div>
   </div>
   <select class="field" id="sessionSel" style="max-width:280px" onchange="onSessionChange()">
@@ -309,6 +338,8 @@
     <div class="fmt-card-body" id="fmtBody"></div>
   </div>
 </div>
+
+<div class="stats-bar" id="statsBar"></div>
 
 <div class="main">
   <div class="list-panel">
@@ -440,6 +471,7 @@ async function loadRecords() {
   if (!session || !date) return;
 
   document.getElementById('recordList').innerHTML = '<span class="spinner"></span>';
+  document.querySelectorAll('.spark-tooltip').forEach(el => el.remove());
 
   try {
     const resp = await fetch(
@@ -450,6 +482,7 @@ async function loadRecords() {
     allRecords = data.records || [];
     selectedIdx = -1;
     renderList();
+    renderStats();
     document.getElementById('detailPanel').innerHTML = '<div class="empty-detail">← 点击列表项查看详情</div>';
   } catch(e) {
     document.getElementById('recordList').innerHTML =
@@ -457,12 +490,148 @@ async function loadRecords() {
   }
 }
 
+// ── Stats bar ─────────────────────────────────────────────────────────────
+function fmtN(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+  return String(n);
+}
+
+function renderStats() {
+  const bar = document.getElementById('statsBar');
+  const filterTitle = document.getElementById('filterTitleReq')?.checked ?? true;
+  const ssRecs = allRecords.filter(r => r.is_sse && r.sse_events?.length && !(filterTitle && isTitleGenReq(r)));
+  if (!ssRecs.length) { bar.className = 'stats-bar'; bar.innerHTML = ''; return; }
+
+  let totalOutput = 0, totalInput = 0, totalCacheRead = 0, totalCacheCreate = 0;
+  const totalInPerReq = [];
+
+  for (const r of ssRecs) {
+    const { usage } = parseSseEvents(r.sse_events);
+    if (!usage) { totalInPerReq.push(0); continue; }
+    const out = usage.output_tokens || 0;
+    const totalIn = (usage.input_tokens || 0) + (usage.cache_read_input_tokens || 0) + (usage.cache_creation_input_tokens || 0);
+    totalOutput    += out;
+    totalInput     += usage.input_tokens || 0;
+    totalCacheRead += usage.cache_read_input_tokens || 0;
+    totalCacheCreate += usage.cache_creation_input_tokens || 0;
+    totalInPerReq.push(totalIn);
+  }
+
+  const n = totalInPerReq.length;
+
+  bar.className = 'stats-bar visible';
+  bar.innerHTML =
+    `<div class="stats-group">` +
+      `<div class="stat-item"><span class="stat-label">请求数</span><span class="stat-value accent">${ssRecs.length}</span></div>` +
+    `</div>` +
+    `<div class="stats-group">` +
+      `<div class="stat-item"><span class="stat-label">output</span><span class="stat-value">${fmtN(totalOutput)}</span></div>` +
+      `<div class="stat-item"><span class="stat-label">input</span><span class="stat-value">${fmtN(totalInput)}</span></div>` +
+    `</div>` +
+    `<div class="stats-group">` +
+      `<div class="stat-item"><span class="stat-label">cache_read</span><span class="stat-value">${fmtN(totalCacheRead)}</span></div>` +
+      `<div class="stat-item"><span class="stat-label">cache_create</span><span class="stat-value">${fmtN(totalCacheCreate)}</span></div>` +
+    `</div>`;
+
+  // Sparkline — built as DOM for interactivity
+  if (n >= 2) {
+    const W = 160, H = 32, pad = 2;
+    const max = Math.max(...totalInPerReq, 1);
+    const coords = totalInPerReq.map((v, i) => ({
+      x: pad + (i / (n - 1)) * (W - pad * 2),
+      y: H - pad - (v / max) * (H - pad * 2),
+      v,
+    }));
+
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('width', W); svg.setAttribute('height', H);
+    svg.style.display = 'block'; svg.style.cursor = 'crosshair';
+
+    const poly = document.createElementNS(NS, 'polyline');
+    poly.setAttribute('points', coords.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' '));
+    poly.setAttribute('fill', 'none');
+    poly.setAttribute('stroke', '#58a6ff');
+    poly.setAttribute('stroke-width', '1.5');
+    poly.setAttribute('stroke-linejoin', 'round');
+    poly.setAttribute('stroke-linecap', 'round');
+    svg.appendChild(poly);
+
+    // Hover dot
+    const dot = document.createElementNS(NS, 'circle');
+    dot.setAttribute('r', '3'); dot.setAttribute('fill', '#58a6ff');
+    dot.style.display = 'none';
+    svg.appendChild(dot);
+
+    // Tooltip div
+    const tip = document.createElement('div');
+    tip.className = 'spark-tooltip';
+    document.body.appendChild(tip);
+
+    // Hit areas per data point
+    const slotW = (W - pad * 2) / n;
+    coords.forEach((c, i) => {
+      const hit = document.createElementNS(NS, 'rect');
+      hit.setAttribute('x', (c.x - slotW / 2).toFixed(1));
+      hit.setAttribute('y', '0');
+      hit.setAttribute('width', slotW.toFixed(1));
+      hit.setAttribute('height', H);
+      hit.setAttribute('fill', 'transparent');
+      hit.addEventListener('mouseenter', ev => {
+        dot.setAttribute('cx', c.x.toFixed(1));
+        dot.setAttribute('cy', c.y.toFixed(1));
+        dot.style.display = '';
+        tip.textContent = `#${i + 1}  总输入: ${c.v.toLocaleString()}`;
+        tip.classList.add('show');
+      });
+      hit.addEventListener('mousemove', ev => {
+        tip.style.left = (ev.clientX + 12) + 'px';
+        tip.style.top  = (ev.clientY - 28) + 'px';
+      });
+      hit.addEventListener('mouseleave', () => {
+        dot.style.display = 'none';
+        tip.classList.remove('show');
+      });
+      svg.appendChild(hit);
+    });
+
+    // Clean up tooltip when bar is re-rendered
+    svg.addEventListener('remove', () => tip.remove());
+
+    const wrap = document.createElement('div');
+    wrap.className = 'sparkline-wrap';
+    const label = document.createElement('span');
+    label.className = 'sparkline-label';
+    label.textContent = '总输入/req';
+    wrap.appendChild(label);
+    wrap.appendChild(svg);
+    bar.appendChild(wrap);
+  }
+}
+
+// ── Title generation request filter ──────────────────────────────────────
+function isTitleGenReq(r) {
+  try {
+    const body = JSON.parse(r.request?.body || '{}');
+    const system = body.system;
+    if (!Array.isArray(system)) return false;
+    return system.some(s =>
+      s.type === 'text' &&
+      typeof s.text === 'string' &&
+      s.text.startsWith('Generate a concise, sentence-case title')
+    );
+  } catch { return false; }
+}
+
 // ── Render list ────────────────────────────────────────────────────────────
 function renderList() {
   const list = document.getElementById('recordList');
   const q = (document.getElementById('searchBox')?.value || '').trim().toLowerCase();
 
+  const filterTitle = document.getElementById('filterTitleReq')?.checked ?? true;
   const visible = allRecords.map((r, i) => ({ r, i })).filter(({ r }) => {
+    if (filterTitle && isTitleGenReq(r)) return false;
     if (!q) return true;
     const msgId = (r._message_id || '').toLowerCase();
     const url = (r.url || '').toLowerCase();
@@ -494,6 +663,15 @@ function renderList() {
     let urlDisplay = r.url || '';
     try { urlDisplay = new URL(r.url).pathname; } catch {}
 
+    let totalInTokens = '';
+    if (isSSE && r.sse_events?.length) {
+      const { usage } = parseSseEvents(r.sse_events);
+      if (usage) {
+        const v = (usage.input_tokens || 0) + (usage.cache_read_input_tokens || 0) + (usage.cache_creation_input_tokens || 0);
+        if (v > 0) totalInTokens = fmtN(v);
+      }
+    }
+
     el.innerHTML =
       `<div class="ri-row1">` +
         `<span class="ri-lineno">#${i + 1}</span>` +
@@ -501,6 +679,7 @@ function renderList() {
         `<span class="ri-method">${esc(r.method || '')}</span>` +
         `<span class="ri-status ${statusCls}">${status}</span>` +
         (isSSE ? `<span class="sse-badge">SSE ×${r.sse_events?.length || 0}</span>` : '') +
+        (totalInTokens ? `<span style="font-size:10px;color:#6e7681;margin-left:auto;font-family:monospace">${totalInTokens}</span>` : '') +
       `</div>` +
       `<div class="ri-url">${esc(urlDisplay)}</div>`;
 
