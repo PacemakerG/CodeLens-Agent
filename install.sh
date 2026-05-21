@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-WHL_URL="https://msstest.sankuai.com/ad-dqe-public/ai-coding-analysis/deep_ai_analysis-0.1.2-py3-none-any.whl"
+WHL_URL="https://msstest.sankuai.com/ad-dqe-public/ai-coding-analysis/deep_ai_analysis-0.1.3-py3-none-any.whl"
 
 echo "=================================================="
 echo "  deep-ai-analysis 安装程序"
