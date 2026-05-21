@@ -252,6 +252,27 @@
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
 
+  /* Messages diff */
+  .msg-diff-item {
+    padding: 6px 8px; border-radius: 4px; margin-bottom: 6px;
+    border-left: 3px solid #30363d;
+  }
+  .msg-diff-item:last-child { margin-bottom: 0; }
+  .msg-diff-item.role-user { border-left-color: #56d364; }
+  .msg-diff-item.role-assistant { border-left-color: #79c0ff; }
+  .msg-diff-role {
+    font-size: 10px; font-weight: 600; margin-bottom: 4px;
+    text-transform: uppercase; letter-spacing: .5px;
+  }
+  .msg-diff-item.role-user .msg-diff-role { color: #56d364; }
+  .msg-diff-item.role-assistant .msg-diff-role { color: #79c0ff; }
+  .msg-diff-block { font-size: 11px; color: #adbac7; margin-bottom: 3px; }
+  .msg-diff-block:last-child { margin-bottom: 0; }
+  .msg-diff-type {
+    display: inline-block; font-size: 10px; padding: 0 4px;
+    border-radius: 3px; background: #21262d; color: #8b949e; margin-right: 4px;
+  }
+
   /* Format button (shown on jt-row hover for long strings) */
   .fmt-btn {
     opacity: 0; pointer-events: none;
@@ -293,6 +314,18 @@
   }
   .fmt-card-close:hover { color: #e1e4e8; }
   .fmt-card-body { flex: 1; overflow-y: auto; padding: 12px 14px; }
+
+  /* Source filter chips */
+  .source-filter-wrap { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  .source-chip {
+    font-size: 11px; padding: 2px 8px; border-radius: 10px; cursor: pointer;
+    user-select: none; border: 1px solid transparent; transition: opacity .1s;
+  }
+  .source-chip.off { opacity: .4; }
+  .source-chip-main { background: #1a2440; color: #79c0ff; border-color: #1f4070; }
+  .source-chip-agent { background: #2d1f3a; color: #bc8cff; border-color: #4a2d6a; }
+  .source-chip-unknown { background: #21262d; color: #8b949e; border-color: #30363d; }
+  .source-loading { font-size: 11px; color: #58a6ff; display: flex; align-items: center; }
 </style>
 </head>
 <body>
@@ -316,11 +349,11 @@
   <select class="field" id="dateSel" style="width:130px" onchange="loadRecords()">
     <option value="">— date —</option>
   </select>
+  <div class="source-filter-wrap" id="sourceFilterWrap"></div>
   <input class="field" id="searchBox" placeholder="搜索 message ID 或 URL…" oninput="renderList()" style="width:220px">
   <button class="btn" onclick="init()">刷新</button>
   <span class="badge" id="countBadge"></span>
   <div class="nav-links">
-    <a class="nav-link" href="index.html">会话查看器</a>
     <a class="nav-link" href="claude-log.html">Claude Log</a>
   </div>
 </div>
@@ -355,6 +388,8 @@
 <script>
 let allRecords = [];
 let selectedIdx = -1;
+// Source filter: set of active sources ('main', agentId, 'unknown'), null = all active
+let activeSourceFilters = null;
 
 function toggleAdv() {
   document.getElementById('advPanel').classList.toggle('open');
@@ -481,9 +516,11 @@ async function loadRecords() {
     const data = await resp.json();
     allRecords = data.records || [];
     selectedIdx = -1;
-    renderList();
-    renderStats();
+    activeSourceFilters = null;
+    document.getElementById('recordList').innerHTML = '<span class="spinner"></span>';
     document.getElementById('detailPanel').innerHTML = '<div class="empty-detail">← 点击列表项查看详情</div>';
+    // Wait for source resolution before rendering list
+    await fetchAllSources(session);
   } catch(e) {
     document.getElementById('recordList').innerHTML =
       `<div class="placeholder" style="color:#f85149">加载失败: ${esc(e.message)}</div>`;
@@ -500,22 +537,31 @@ function fmtN(n) {
 function renderStats() {
   const bar = document.getElementById('statsBar');
   const filterTitle = document.getElementById('filterTitleReq')?.checked ?? true;
-  const ssRecs = allRecords.filter(r => r.is_sse && r.sse_events?.length && !(filterTitle && isTitleGenReq(r)));
+  const ssRecs = allRecords.filter(r => {
+    if (!r.is_sse || !r.sse_events?.length) return false;
+    if (filterTitle && isTitleGenReq(r)) return false;
+    if (activeSourceFilters !== null) {
+      const src = r._source ?? 'unknown';
+      if (activeSourceFilters !== src) return false;
+    }
+    return true;
+  });
   if (!ssRecs.length) { bar.className = 'stats-bar'; bar.innerHTML = ''; return; }
 
   let totalOutput = 0, totalInput = 0, totalCacheRead = 0, totalCacheCreate = 0;
-  const totalInPerReq = [];
+  const totalInPerReq = [];  // [{v, line}]
 
   for (const r of ssRecs) {
     const { usage } = parseSseEvents(r.sse_events);
-    if (!usage) { totalInPerReq.push(0); continue; }
+    const line = r._fileLine ?? null;
+    if (!usage) { totalInPerReq.push({ v: 0, line }); continue; }
     const out = usage.output_tokens || 0;
     const totalIn = (usage.input_tokens || 0) + (usage.cache_read_input_tokens || 0) + (usage.cache_creation_input_tokens || 0);
     totalOutput    += out;
     totalInput     += usage.input_tokens || 0;
     totalCacheRead += usage.cache_read_input_tokens || 0;
     totalCacheCreate += usage.cache_creation_input_tokens || 0;
-    totalInPerReq.push(totalIn);
+    totalInPerReq.push({ v: totalIn, line });
   }
 
   const n = totalInPerReq.length;
@@ -537,11 +583,12 @@ function renderStats() {
   // Sparkline — built as DOM for interactivity
   if (n >= 2) {
     const W = 160, H = 32, pad = 2;
-    const max = Math.max(...totalInPerReq, 1);
-    const coords = totalInPerReq.map((v, i) => ({
+    const max = Math.max(...totalInPerReq.map(d => d.v), 1);
+    const coords = totalInPerReq.map((d, i) => ({
       x: pad + (i / (n - 1)) * (W - pad * 2),
-      y: H - pad - (v / max) * (H - pad * 2),
-      v,
+      y: H - pad - (d.v / max) * (H - pad * 2),
+      v: d.v,
+      line: d.line,
     }));
 
     const NS = 'http://www.w3.org/2000/svg';
@@ -582,7 +629,7 @@ function renderStats() {
         dot.setAttribute('cx', c.x.toFixed(1));
         dot.setAttribute('cy', c.y.toFixed(1));
         dot.style.display = '';
-        tip.textContent = `#${i + 1}  总输入: ${c.v.toLocaleString()}`;
+        tip.textContent = `${c.line != null ? 'L' + c.line : '#' + (i + 1)}  总输入: ${c.v.toLocaleString()}`;
         tip.classList.add('show');
       });
       hit.addEventListener('mousemove', ev => {
@@ -611,6 +658,94 @@ function renderStats() {
 }
 
 // ── Title generation request filter ──────────────────────────────────────
+// ── Source filter ──────────────────────────────────────────────────────────
+async function fetchAllSources(sessionId) {
+  const wrap = document.getElementById('sourceFilterWrap');
+  if (!wrap) return;
+  wrap.innerHTML = '<span class="source-loading"><span class="spinner" style="width:10px;height:10px;border-width:1.5px;display:inline-block;vertical-align:middle;margin-right:4px"></span>来源查询中…</span>';
+  document.getElementById('recordList').innerHTML = '<span class="spinner"></span>';
+
+  const sseRecs = allRecords.map((r, i) => ({ r, i })).filter(({ r }) => r.is_sse && r._message_id);
+  await Promise.all(sseRecs.map(async ({ r }) => {
+    try {
+      const res = await fetch(`${apiBase()}/api/message-source/${encodeURIComponent(sessionId)}/${encodeURIComponent(r._message_id)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.source === 'main') r._source = 'main';
+      else if (data.source === 'subagent') r._source = data.agentId || 'unknown-agent';
+    } catch {}
+  }));
+
+  renderSourceFilter();
+  renderList();
+  renderStats();
+}
+
+function renderSourceFilter() {
+  const wrap = document.getElementById('sourceFilterWrap');
+  if (!wrap) return;
+
+  // Collect distinct sources from SSE records
+  const sourceSet = new Map(); // source -> count
+  for (const r of allRecords) {
+    if (!r.is_sse) continue;
+    const src = r._source ?? null;
+    if (src === null) continue;
+    sourceSet.set(src, (sourceSet.get(src) || 0) + 1);
+  }
+
+  if (sourceSet.size === 0) { wrap.innerHTML = ''; return; }
+
+  // Init filter state: default to main only (null = all)
+  if (activeSourceFilters === null) {
+    activeSourceFilters = sourceSet.has('main') ? 'main' : null;
+  }
+
+  const totalCount = [...sourceSet.values()].reduce((a, b) => a + b, 0);
+
+  wrap.innerHTML = '';
+
+  function refreshChips() {
+    wrap.querySelectorAll('.source-chip').forEach(c => {
+      const s = c.dataset.src;
+      const active = s === '__all__' ? activeSourceFilters === null : activeSourceFilters === s;
+      c.classList.toggle('off', !active);
+    });
+  }
+
+  // 全部 chip
+  const allChip = document.createElement('span');
+  allChip.className = `source-chip source-chip-unknown` + (activeSourceFilters === null ? '' : ' off');
+  allChip.textContent = `全部 (${totalCount})`;
+  allChip.dataset.src = '__all__';
+  allChip.onclick = () => {
+    activeSourceFilters = null;
+    refreshChips();
+    renderList(); renderStats();
+  };
+  wrap.appendChild(allChip);
+
+  const sorted = [...sourceSet.entries()].sort(([a], [b]) => {
+    if (a === 'main') return -1;
+    if (b === 'main') return 1;
+    return a.localeCompare(b);
+  });
+  for (const [src, count] of sorted) {
+    const chip = document.createElement('span');
+    const isMain = src === 'main';
+    chip.className = `source-chip ${isMain ? 'source-chip-main' : 'source-chip-agent'}` + (activeSourceFilters === src ? '' : ' off');
+    chip.textContent = `${isMain ? '🤖 Main' : '🔧 ' + src} (${count})`;
+    chip.dataset.src = src;
+    chip.title = src;
+    chip.onclick = () => {
+      activeSourceFilters = src;
+      refreshChips();
+      renderList(); renderStats();
+    };
+    wrap.appendChild(chip);
+  }
+}
+
 function isTitleGenReq(r) {
   try {
     const body = JSON.parse(r.request?.body || '{}');
@@ -632,6 +767,10 @@ function renderList() {
   const filterTitle = document.getElementById('filterTitleReq')?.checked ?? true;
   const visible = allRecords.map((r, i) => ({ r, i })).filter(({ r }) => {
     if (filterTitle && isTitleGenReq(r)) return false;
+    if (activeSourceFilters !== null) {
+      const src = r._source ?? 'unknown';
+      if (activeSourceFilters !== src) return false;
+    }
     if (!q) return true;
     const msgId = (r._message_id || '').toLowerCase();
     const url = (r.url || '').toLowerCase();
@@ -663,12 +802,14 @@ function renderList() {
     let urlDisplay = r.url || '';
     try { urlDisplay = new URL(r.url).pathname; } catch {}
 
-    let totalInTokens = '';
+    let totalInTokens = '', outTokens = '';
     if (isSSE && r.sse_events?.length) {
       const { usage } = parseSseEvents(r.sse_events);
       if (usage) {
         const v = (usage.input_tokens || 0) + (usage.cache_read_input_tokens || 0) + (usage.cache_creation_input_tokens || 0);
         if (v > 0) totalInTokens = fmtN(v);
+        const o = usage.output_tokens || 0;
+        if (o > 0) outTokens = fmtN(o);
       }
     }
 
@@ -678,8 +819,13 @@ function renderList() {
         `<span class="ri-ts">${esc(fmtTs(r.timestamp))}</span>` +
         `<span class="ri-method">${esc(r.method || '')}</span>` +
         `<span class="ri-status ${statusCls}">${status}</span>` +
-        (isSSE ? `<span class="sse-badge">SSE ×${r.sse_events?.length || 0}</span>` : '') +
-        (totalInTokens ? `<span style="font-size:10px;color:#6e7681;margin-left:auto;font-family:monospace">${totalInTokens}</span>` : '') +
+        (isSSE ? `<span class="sse-badge">SSE</span>` : '') +
+        (totalInTokens || outTokens
+          ? `<span style="font-size:10px;color:#6e7681;margin-left:auto;font-family:monospace;display:flex;gap:6px">` +
+            (totalInTokens ? `<span title="总输入 tokens">in:${totalInTokens}</span>` : '') +
+            (outTokens ? `<span title="output tokens">out:${outTokens}</span>` : '') +
+            `</span>`
+          : '') +
       `</div>` +
       `<div class="ri-url">${esc(urlDisplay)}</div>`;
 
@@ -693,7 +839,31 @@ function selectRecord(idx) {
   selectedIdx = idx;
   document.querySelectorAll('.record-item').forEach(el =>
     el.classList.toggle('active', Number(el.dataset.idx) === idx));
-  renderDetail(allRecords[idx]);
+  renderDetail(allRecords[idx], idx);
+  // Async: fetch message source and update badge
+  const r = allRecords[idx];
+  const msgId = r._message_id;
+  const sessionId = document.getElementById('sessionSel').value;
+  if (msgId && sessionId) {
+    fetch(`${apiBase()}/api/message-source/${encodeURIComponent(sessionId)}/${encodeURIComponent(msgId)}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (!data || !data.source) return;
+        const badge = document.getElementById('msgSourceBadge');
+        if (!badge) return;
+        if (data.source === 'main') {
+          badge.textContent = '🤖 Main Session';
+          badge.style.background = '#1a2440'; badge.style.color = '#79c0ff';
+        } else {
+          badge.textContent = `🔧 Agent: ${data.agentId || 'unknown'}`;
+          badge.style.background = '#2d1f3a'; badge.style.color = '#bc8cff';
+        }
+        badge.style.display = 'inline-block';
+        const hint = badge.nextElementSibling;
+        if (hint) hint.style.display = 'none';
+      })
+      .catch(() => {});
+  }
 }
 
 // ── Section helper ─────────────────────────────────────────────────────────
@@ -1069,7 +1239,73 @@ function parseSseEvents(events) {
 }
 
 // ── Render detail ──────────────────────────────────────────────────────────
-function renderDetail(r) {
+// ── Messages diff ──────────────────────────────────────────────────────────
+function getPrevRecord(idx) {
+  // Find previous SSE record that's not a context reset (messages count not drastically lower)
+  for (let i = idx - 1; i >= 0; i--) {
+    const r = allRecords[i];
+    if (!r.is_sse) continue;
+    if (isTitleGenReq(r)) continue;
+    return r;
+  }
+  return null;
+}
+
+function parseMsgs(r) {
+  try { return JSON.parse(r.request?.body || '{}').messages || []; }
+  catch { return []; }
+}
+
+function diffMessages(curMsgs, prevMsgs) {
+  // Returns {added: [...], removed: N}
+  if (!prevMsgs.length) return { added: curMsgs, removed: 0 };
+  const delta = curMsgs.length - prevMsgs.length;
+  if (delta > 0) return { added: curMsgs.slice(-delta), removed: 0 };
+  if (delta < 0) return { added: [], removed: -delta };
+  return { added: [], removed: 0 };
+}
+
+function renderMsgBlock(b, blockIdx) {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg-diff-block';
+
+  // Header: [index] type-badge name id
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:6px';
+  const idxSpan = `<span style="font-size:10px;color:#484f58;font-family:monospace">[${blockIdx}]</span>`;
+  const typeBadge = b.type === 'text'
+    ? `<span style="font-size:10px;font-weight:600;padding:1px 5px;border-radius:3px;background:#1a2e1a;color:#56d364">text</span>`
+    : b.type === 'tool_use'
+      ? `<span style="font-size:10px;font-weight:600;padding:1px 5px;border-radius:3px;background:#1a2440;color:#79c0ff">tool_use</span>`
+      : b.type === 'tool_result'
+        ? `<span style="font-size:10px;font-weight:600;padding:1px 5px;border-radius:3px;background:#1a2e1a;color:#56d364">tool_result</span>`
+        : `<span style="font-size:10px;font-weight:600;padding:1px 5px;border-radius:3px;background:#21262d;color:#8b949e">${esc(b.type)}</span>`;
+  hdr.innerHTML = idxSpan + typeBadge +
+    (b.name ? `<span style="font-size:11px;color:#e3b341">${esc(b.name)}</span>` : '') +
+    (b.tool_use_id ? `<span style="font-size:10px;color:#484f58;font-family:monospace">${esc(b.tool_use_id)}</span>` : '') +
+    (b.id ? `<span style="font-size:10px;color:#484f58;font-family:monospace">${esc(b.id)}</span>` : '');
+  wrap.appendChild(hdr);
+
+  if (b.type === 'text' && b.text) {
+    wrap.appendChild(mkTextWithMdToggle(b.text));
+  } else if (b.type === 'tool_use' && b.input != null) {
+    const tree = document.createElement('div');
+    tree.className = 'json-tree';
+    tree.style.cssText = 'max-height:200px;overflow-y:auto;padding:4px;background:#0d1117;border-radius:4px';
+    tree.appendChild(typeof b.input === 'object'
+      ? renderJsonTree(b.input, 0, 2)
+      : (() => { const d = document.createElement('div'); d.textContent = String(b.input); return d; })());
+    wrap.appendChild(tree);
+  } else if (b.type === 'tool_result') {
+    const content = typeof b.content === 'string' ? b.content : JSON.stringify(b.content, null, 2);
+    wrap.appendChild(mkTextWithMdToggle(content));
+  }
+
+  return wrap;
+}
+
+
+function renderDetail(r, idx) {
   const panel = document.getElementById('detailPanel');
   panel.innerHTML = '';
 
@@ -1088,6 +1324,7 @@ function renderDetail(r) {
       <div class="ig-k">Domain</div><div class="ig-v">${esc(r.domain || '')}</div>
       <div class="ig-k">SSE</div><div class="ig-v">${r.is_sse ? `是（${r.sse_events?.length || 0} events）` : '否'}</div>
       ${traceId ? `<div class="ig-k">M-TraceId</div><div class="ig-v">${esc(traceId)}</div>` : ''}
+      ${r._message_id ? `<div class="ig-k">来源</div><div class="ig-v"><span id="msgSourceBadge" style="display:none;font-size:11px;padding:1px 7px;border-radius:4px;font-weight:600"></span><span style="font-size:11px;color:#484f58"> 查询中…</span></div>` : ''}
     </div>`;
   }));
 
@@ -1115,11 +1352,20 @@ function renderDetail(r) {
       const sysBlocks = reqJson.system || [];
       const tools = reqJson.tools || [];
 
-      // Build tabs: Message | System | Tools | 原始
+      // Compute diff label
+      const _prev = idx != null ? getPrevRecord(idx) : null;
+      const _prevMsgs = _prev ? parseMsgs(_prev) : [];
+      const _diff = diffMessages(msgs, _prevMsgs);
+      const diffLabel = _diff.removed > 0
+        ? `增量 (+${_diff.added.length} -${_diff.removed})`
+        : `增量 (+${_diff.added.length})`;
+
+      // Build tabs: Message | System | Tools | 增量 | 原始
       const tabs = [
         { id: 'msg',  label: `Message (${msgs.length})` },
         { id: 'sys',  label: `System (${sysBlocks.length})` },
         { id: 'tool', label: `Tools (${tools.length})` },
+        { id: 'diff', label: diffLabel },
         { id: 'raw',  label: '原始' },
       ];
 
@@ -1266,6 +1512,42 @@ function renderDetail(r) {
         toolPane.appendChild(rowDiv);
       });
       tabBody.appendChild(toolPane);
+
+      // ── Tab: 增量 ─────────────────────────────────────────────────────────
+      const diffPane = document.createElement('div');
+      diffPane.className = 'tab-pane'; diffPane.dataset.tab = 'diff';
+      if (idx != null) {
+        const diffContent = document.createElement('div');
+        diffContent.style.padding = '4px 0';
+        const prev = getPrevRecord(idx);
+        const curMsgs = parseMsgs(r);
+        const prevMsgs = prev ? parseMsgs(prev) : [];
+        const diff = diffMessages(curMsgs, prevMsgs);
+        if (diff.removed > 0) {
+          const removedEl = document.createElement('div');
+          removedEl.style.cssText = 'font-size:11px;color:#f85149;padding:6px 8px;background:#3d1010;border-radius:4px;margin-bottom:8px';
+          removedEl.textContent = `⚠ 减少了 ${diff.removed} 条消息（context 截断或对话重置）`;
+          diffContent.appendChild(removedEl);
+        }
+        if (!diff.added.length && diff.removed === 0) {
+          diffContent.innerHTML += `<div style="font-size:12px;color:#484f58;padding:8px 0">无变化</div>`;
+        }
+        for (const msg of diff.added) {
+          const item = document.createElement('div');
+          item.className = `msg-diff-item role-${msg.role || 'unknown'}`;
+          const roleEl = document.createElement('div');
+          roleEl.className = 'msg-diff-role';
+          roleEl.textContent = msg.role || 'unknown';
+          item.appendChild(roleEl);
+          const content = Array.isArray(msg.content)
+            ? msg.content
+            : [{ type: 'text', text: String(msg.content || '') }];
+          content.forEach((b, bi) => item.appendChild(renderMsgBlock(b, bi)));
+          diffContent.appendChild(item);
+        }
+        diffPane.appendChild(diffContent);
+      }
+      tabBody.appendChild(diffPane);
 
       // ── Tab: 原始 ─────────────────────────────────────────────────────────
       const rawPane = document.createElement('div');

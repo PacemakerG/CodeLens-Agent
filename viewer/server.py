@@ -163,6 +163,35 @@ def get_message_http(
     return matches
 
 
+def get_message_source(
+    session_id: str,
+    message_id: str,
+    projects_dir: Path,
+) -> dict[str, Any] | None:
+    """Find the source (main or subagent) of an assistant message by message.id.
+
+    Returns:
+        {"source": "main"} or {"source": "subagent", "agentId": "..."}
+        None if session not found, {} if message not found in session.
+    """
+    session_data = get_session(session_id, projects_dir)
+    if session_data is None:
+        return None
+
+    # Search main entries
+    for entry in session_data.get("main", []):
+        if entry.get("type") == "assistant" and entry.get("message", {}).get("id") == message_id:
+            return {"source": "main"}
+
+    # Search subagents
+    for sa in session_data.get("subagents", []):
+        for entry in sa.get("entries", []):
+            if entry.get("type") == "assistant" and entry.get("message", {}).get("id") == message_id:
+                return {"source": "subagent", "agentId": sa.get("agentId", "")}
+
+    return {}
+
+
 def get_logs(
     logs_dir: Path,
     session_filter: str | None = None,
@@ -331,6 +360,23 @@ def _make_handler(projects_dir: Path, logs_dir: Path):
                     self._send_json({"error": "message not found"}, 404)
                 else:
                     self._send_json({"records": records})
+
+            elif path.startswith("/api/message-source/"):
+                # /api/message-source/<sessionId>/<messageId>
+                rest = path[len("/api/message-source/"):]
+                parts = rest.split("/", 1)
+                if len(parts) != 2:
+                    self._send_json({"error": "invalid path"}, 400)
+                    return
+                session_id, message_id = parts
+                if not re.fullmatch(r"[0-9a-f-]{36}", session_id):
+                    self._send_json({"error": "invalid session id"}, 400)
+                    return
+                result = get_message_source(session_id, message_id, projects_dir)
+                if result is None:
+                    self._send_json({"error": "session not found"}, 404)
+                else:
+                    self._send_json(result)
 
             elif path == "/api/req-resp/sessions":
                 self._send_json(get_req_resp_sessions(logs_dir))
