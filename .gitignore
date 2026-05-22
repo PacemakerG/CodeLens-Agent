@@ -8,4 +8,5 @@ __pycache__/
 dist/
 build/
 .venv/
+venv/
 .vscode/settings.json
