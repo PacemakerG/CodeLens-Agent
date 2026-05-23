@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import re
 import sys
-import tarfile
-from datetime import datetime
 from pathlib import Path
 
 import click
 
 from deep_ai_analysis.config import DEFAULT_RAW_LOG_DIR
+from deep_ai_analysis.exporter import build_tar_gz_bytes, default_filename
 
 project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
@@ -19,11 +18,6 @@ if str(project_root) not in sys.path:
 from viewer.server import get_projects, get_req_resp_sessions, get_session
 
 SESSION_ID_RE = re.compile(r"[0-9a-f-]{36}")
-
-
-def _default_output_path() -> Path:
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    return Path.cwd() / f"export-{timestamp}.tar.gz"
 
 
 def _print_sessions(projects_dir: Path) -> None:
@@ -51,59 +45,12 @@ def _req_resp_dates_by_session(req_resp_dir: Path) -> dict[str, list[str]]:
     return result
 
 
-def _add_file(tar: tarfile.TarFile, src: Path, arcname: str) -> None:
-    tar.add(src, arcname=arcname, recursive=False)
-
-
 def _validate_session_ids(session_ids: tuple[str, ...]) -> list[str]:
     unique_ids = list(dict.fromkeys(session_ids))
     invalid_ids = [session_id for session_id in unique_ids if not SESSION_ID_RE.fullmatch(session_id)]
     if invalid_ids:
         raise click.ClickException(f"Invalid session ID(s): {', '.join(invalid_ids)}")
     return unique_ids
-
-
-def _export_session(
-    tar: tarfile.TarFile,
-    session_id: str,
-    projects_dir: Path,
-    req_resp_dir: Path,
-    req_resp_dates: dict[str, list[str]],
-) -> dict[str, str | int]:
-    session = get_session(session_id, projects_dir)
-    if session is None:
-        raise click.ClickException(f"Session not found: {session_id}")
-
-    project_dir = projects_dir / session["projectDir"]
-    main_log = project_dir / f"{session_id}.jsonl"
-    if not main_log.exists():
-        raise click.ClickException(f"Main Claude log not found: {main_log}")
-
-    _add_file(tar, main_log, f"{session_id}/claude-log.jsonl")
-
-    subagent_count = 0
-    subagents_dir = project_dir / session_id / "subagents"
-    if subagents_dir.is_dir():
-        for path in sorted(subagents_dir.iterdir()):
-            if not path.is_file():
-                continue
-            _add_file(tar, path, f"{session_id}/subagents/{path.name}")
-            subagent_count += 1
-
-    raw_count = 0
-    for date in req_resp_dates.get(session_id, []):
-        raw_path = req_resp_dir / session_id / f"{date}.jsonl"
-        if not raw_path.exists():
-            continue
-        _add_file(tar, raw_path, f"{session_id}/raw-req-resp/{raw_path.name}")
-        raw_count += 1
-
-    return {
-        "session_id": session_id,
-        "project_dir": session["projectDir"],
-        "subagent_count": subagent_count,
-        "raw_count": raw_count,
-    }
 
 
 @click.command("export")
@@ -151,17 +98,20 @@ def export(
         raise click.ClickException("No session IDs provided. Use --list to discover available sessions.")
 
     resolved_session_ids = _validate_session_ids(session_ids)
-    output = output or _default_output_path()
+    if output is None:
+        output = Path.cwd() / default_filename()
     output.parent.mkdir(parents=True, exist_ok=True)
 
     req_resp_dates = _req_resp_dates_by_session(req_resp_dir)
 
-    summaries = []
-    with tarfile.open(output, "w:gz") as tar:
-        for session_id in resolved_session_ids:
-            summaries.append(
-                _export_session(tar, session_id, projects_dir, req_resp_dir, req_resp_dates)
-            )
+    try:
+        data, summaries = build_tar_gz_bytes(
+            resolved_session_ids, projects_dir, req_resp_dir, req_resp_dates, get_session
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    output.write_bytes(data)
 
     click.echo(f"Exported {len(summaries)} session(s) to {output}")
     for summary in summaries:

@@ -14,11 +14,6 @@ dependencies = [
 [project.scripts]
 deep-ai-analysis = "deep_ai_analysis.cli:cli"
 
-[project.optional-dependencies]
-dev = [
-    "mitmproxy",
-]
-
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["deep_ai_analysis*", "viewer*"]
