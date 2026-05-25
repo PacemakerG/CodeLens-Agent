@@ -79,7 +79,20 @@ fi
 
 echo ""
 echo "正在安装 deep-ai-analysis..."
-"$PIP_BIN" install "$WHL_URL"
+"$PIP_BIN" install --user --break-system-packages "$WHL_URL"
 
 echo ""
-echo "✅ 安装完成！运行 'deep-ai-analysis --help' 查看使用说明。"
+if command -v deep-ai-analysis &>/dev/null; then
+  echo "✅ 安装完成！运行 'deep-ai-analysis --help' 查看使用说明。"
+else
+  # --user 安装的 binary 可能不在 PATH，提示用户添加
+  USER_BIN=$("$PYTHON_BIN" -m site --user-base 2>/dev/null)/bin
+  echo "✅ 安装完成！"
+  echo ""
+  echo "⚠️  注意：'deep-ai-analysis' 命令暂时不在 PATH 中。"
+  echo "   请将以下路径添加到你的 shell 配置文件（~/.zshrc 或 ~/.bash_profile）："
+  echo ""
+  echo "   export PATH=\"$USER_BIN:\$PATH\""
+  echo ""
+  echo "   添加后执行 source ~/.zshrc（或重新打开终端），再运行 'deep-ai-analysis --help'。"
+fi
