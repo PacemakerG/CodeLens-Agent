@@ -1387,14 +1387,34 @@ function renderDetail(r, idx) {
           btn.classList.add('active');
           tabSec.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
           tabSec.querySelector(`.tab-pane[data-tab="${t.id}"]`).classList.add('active');
+          copyJsonBtn.style.display = t.id === 'raw' ? 'inline-block' : 'none';
         };
         tabBar.appendChild(btn);
       });
       const toggle = document.createElement('span');
       toggle.className = 'tab-section-toggle';
       toggle.textContent = '收起';
+
+      const copyJsonBtn = document.createElement('button');
+      copyJsonBtn.className = 'btn';
+      copyJsonBtn.style.cssText = 'display:none;font-size:11px;padding:2px 8px;margin-right:6px';
+      copyJsonBtn.textContent = '复制 JSON';
+      copyJsonBtn.onclick = () => {
+        navigator.clipboard.writeText(JSON.stringify(reqJson, null, 2)).then(() => {
+          copyJsonBtn.textContent = '已复制！';
+          setTimeout(() => { copyJsonBtn.textContent = '复制 JSON'; }, 1500);
+        }).catch(() => {
+          copyJsonBtn.textContent = '复制失败';
+          setTimeout(() => { copyJsonBtn.textContent = '复制 JSON'; }, 1500);
+        });
+      };
+
+      const hdrRight = document.createElement('div');
+      hdrRight.style.cssText = 'display:flex;align-items:center;flex-shrink:0';
+      hdrRight.appendChild(copyJsonBtn);
+      hdrRight.appendChild(toggle);
       tabHdr.appendChild(tabBar);
-      tabHdr.appendChild(toggle);
+      tabHdr.appendChild(hdrRight);
       tabSec.appendChild(tabHdr);
 
       const tabBody = document.createElement('div');
