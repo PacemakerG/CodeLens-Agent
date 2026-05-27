@@ -302,6 +302,15 @@ def _make_handler(projects_dir: Path, logs_dir: Path):
             self.end_headers()
             self.wfile.write(body)
 
+        def _send_binary(self, data: bytes, content_type: str, filename: str) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(data)
+
         def do_OPTIONS(self) -> None:
             self.send_response(204)
             self.send_header("Access-Control-Allow-Origin", "*")
@@ -391,6 +400,42 @@ def _make_handler(projects_dir: Path, logs_dir: Path):
                     return
                 records = get_req_resp_records(logs_dir, session_id, date)
                 self._send_json({"records": records})
+
+            elif path == "/api/export":
+                from urllib.parse import parse_qs
+                from deep_ai_analysis.exporter import build_tar_gz_bytes, default_filename
+                params = parse_qs(query)
+                raw_sessions = params.get("sessions", [""])[0]
+                first_session = raw_sessions.split(",")[0].strip() if raw_sessions else None
+                filename = params.get("filename", [""])[0].strip() or default_filename(first_session)
+                session_ids = [s.strip() for s in raw_sessions.split(",") if s.strip()]
+                if not session_ids:
+                    self._send_json({"error": "sessions parameter is required"}, 400)
+                    return
+                invalid = [s for s in session_ids if not re.fullmatch(r"[0-9a-f-]{36}", s)]
+                if invalid:
+                    self._send_json({"error": f"invalid session id(s): {', '.join(invalid)}"}, 400)
+                    return
+                raw_include = params.get("include", ["claudeLogs,subagentLogs,reqResp"])[0]
+                included_keys = {k.strip() for k in raw_include.split(",")}
+                content_options = {
+                    "claudeLogs": "claudeLogs" in included_keys,
+                    "subagentLogs": "subagentLogs" in included_keys,
+                    "reqResp": "reqResp" in included_keys,
+                }
+                req_resp_dates: dict[str, list[str]] = {
+                    s["id"]: s["dates"]
+                    for s in get_req_resp_sessions(logs_dir)["sessions"]
+                }
+                try:
+                    data, _ = build_tar_gz_bytes(
+                        session_ids, projects_dir, logs_dir, req_resp_dates, get_session,
+                        content_options,
+                    )
+                except ValueError as exc:
+                    self._send_json({"error": str(exc)}, 404)
+                    return
+                self._send_binary(data, "application/gzip", filename)
 
             else:
                 self._send_json({"error": "not found"}, 404)

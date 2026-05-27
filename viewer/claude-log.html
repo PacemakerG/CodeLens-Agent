@@ -50,7 +50,8 @@
   }
   .btn:hover { background: #30363d; }
   .badge { font-size: 11px; color: #8b949e; white-space: nowrap; }
-  .nav-link { font-size: 12px; color: #58a6ff; text-decoration: none; margin-left: auto; white-space: nowrap; }
+  .nav-links { margin-left: auto; display: flex; gap: 10px; }
+  .nav-link { font-size: 12px; color: #58a6ff; text-decoration: none; white-space: nowrap; }
 
   /* ── Main layout ── */
   .main { flex: 1; display: flex; overflow: hidden; }
@@ -254,6 +255,63 @@
   .md-view li { margin:2px 0; }
   .md-view strong { color:#f0f6fc; }
   .md-view em { color:#adbac7; }
+
+  /* ── Export modal ── */
+  .export-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.65); z-index: 9999;
+    align-items: center; justify-content: center;
+  }
+  .export-overlay.open { display: flex; }
+  .export-card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+    width: min(480px, 95vw); overflow: hidden;
+  }
+  .export-card-hdr {
+    background: #0d1117; padding: 10px 14px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid #30363d;
+  }
+  .export-card-title { font-size: 13px; font-weight: 600; color: #f0f6fc; }
+  .export-card-close {
+    background: none; border: none; color: #8b949e;
+    font-size: 16px; cursor: pointer; padding: 0 4px; line-height: 1;
+  }
+  .export-card-close:hover { color: #e1e4e8; }
+  .export-card-body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .export-field-label { font-size: 11px; color: #8b949e; margin-bottom: 4px; }
+  .export-field-value {
+    font-size: 12px; color: #adbac7; font-family: monospace;
+    background: #0d1117; border: 1px solid #21262d; border-radius: 4px;
+    padding: 5px 8px; word-break: break-all;
+  }
+  .export-checklist { display: flex; flex-direction: column; gap: 6px; }
+  .export-check-label { font-size: 12px; color: #c9d1d9; display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+  .export-check-label input[type=checkbox] { accent-color: #388bfd; cursor: pointer; }
+  .export-check-label input[type=checkbox]:disabled { cursor: default; opacity: 0.5; }
+  #exportSessionSel:disabled { appearance: none; -webkit-appearance: none; cursor: default; opacity: 0.7; }
+  #exportFilename:disabled { cursor: default; opacity: 0.7; }
+  .export-import-cmd { background: #161b22; border: 1px solid #30363d; border-radius: 4px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+  .export-import-cmd-text { font-size: 11px; font-family: monospace; color: #58a6ff; word-break: break-all; }
+  .export-import-actions { display: flex; gap: 6px; }
+  .export-action-btn { font-size: 11px; padding: 3px 8px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; }
+  .export-action-btn:hover { background: #30363d; }
+  .export-card-footer {
+    padding: 10px 14px; border-top: 1px solid #30363d;
+    display: flex; justify-content: flex-end; gap: 8px;
+  }
+  .export-btn-cancel {
+    background: #21262d; color: #e1e4e8; border: 1px solid #30363d;
+    border-radius: 5px; padding: 5px 14px; font-size: 12px; cursor: pointer;
+  }
+  .export-btn-cancel:hover { background: #30363d; }
+  .export-btn-confirm {
+    background: #1f6feb; color: #fff; border: none;
+    border-radius: 5px; padding: 5px 14px; font-size: 12px; cursor: pointer;
+  }
+  .export-btn-confirm:hover { background: #388bfd; }
+  .export-btn-confirm:disabled { background: #21262d; color: #484f58; cursor: default; }
+  .export-status { font-size: 11px; color: #8b949e; margin-top: 2px; min-height: 16px; }
 </style>
 </head>
 <body>
@@ -285,7 +343,59 @@
     <label class="type-check checked-other" data-type="other"><input type="checkbox" checked>other</label>
   </div>
   <button class="btn" onclick="init()">刷新</button>
+  <button class="btn" id="exportBtn" onclick="openExportModal()" disabled
+          style="background:#1f6feb" title="导出当前 session 的日志和请求响应">导出</button>
   <span class="badge" id="countBadge"></span>
+  <div class="nav-links">
+    <a class="nav-link" href="req-resp.html">Raw Req/Resp</a>
+  </div>
+</div>
+
+<!-- Export modal -->
+<div class="export-overlay" id="exportOverlay" onclick="onExportOverlayClick(event)">
+  <div class="export-card">
+    <div class="export-card-hdr">
+      <span class="export-card-title">导出对话记录</span>
+      <button class="export-card-close" onclick="closeExportModal()">✕</button>
+    </div>
+    <div class="export-card-body">
+      <div>
+        <div class="export-field-label">选择 Session</div>
+        <select class="field" id="exportSessionSel" style="width:100%;font-size:12px" onchange="onExportSessionChange()"></select>
+      </div>
+      <div>
+        <div class="export-field-label">文件名</div>
+        <input class="field" id="exportFilename" type="text" style="width:100%;font-size:12px"
+               placeholder="export-YYYYMMDD-HHmmss.tar.gz">
+      </div>
+      <div>
+        <div class="export-field-label">包含内容</div>
+        <div class="export-checklist">
+          <label class="export-check-label">
+            <input type="checkbox" id="chkClaudeLogs" checked disabled> Claude Code 主日志（必选）
+          </label>
+          <label class="export-check-label">
+            <input type="checkbox" id="chkSubagentLogs" checked> Subagent 日志（如有）
+          </label>
+          <label class="export-check-label">
+            <input type="checkbox" id="chkReqResp" checked> 原始请求响应（如有）
+          </label>
+        </div>
+      </div>
+      <div class="export-status" id="exportStatus"></div>
+      <div class="export-import-cmd" id="exportImportCmd" style="display:none">
+        <div class="export-field-label">发给别人后，对方运行：</div>
+        <div class="export-import-cmd-text" id="exportImportCmdText"></div>
+        <div class="export-import-actions">
+          <button class="export-action-btn" id="exportCopyBtn" onclick="copyImportCmd()">复制导入命令</button>
+        </div>
+      </div>
+    </div>
+    <div class="export-card-footer">
+      <button class="export-btn-cancel" onclick="closeExportModal()">取消</button>
+      <button class="export-btn-confirm" id="exportConfirmBtn" onclick="doExport()">导出并下载</button>
+    </div>
+  </div>
 </div>
 
 <div class="main">
@@ -516,6 +626,10 @@ async function loadSession() {
     selectedIdx = -1;
     renderList();
     document.getElementById('detailPanel').innerHTML = '<div class="empty-detail">← 点击列表项查看原始日志</div>';
+
+    // Enable export button
+    const exportBtn = document.getElementById('exportBtn');
+    if (exportBtn) exportBtn.disabled = false;
   } catch(e) {
     document.getElementById('entryList').innerHTML =
       `<div class="placeholder" style="color:#f85149">加载失败: ${esc(e.message)}</div>`;
@@ -547,8 +661,10 @@ function buildTurns(entries, gid) {
   let turnIdx = 0;
 
   for (const e of entries) {
-    const isRealUser = e.type === 'user' &&
-      typeof e.message?.content === 'string' && e.message.content.trim().length > 0;
+    const isRealUser = e.type === 'user' && (
+      (typeof e.message?.content === 'string' && e.message.content.trim().length > 0) ||
+      (Array.isArray(e.message?.content) && e.message.content.some(b => b.type === 'text' || b.type === 'image'))
+    );
 
     if (isRealUser) {
       current = { root: e, children: [], _turnIdx: turnIdx++ };
@@ -709,7 +825,7 @@ function renderList() {
       // ── Turn header (user root) ──────────────────────────────────────────
       const rootEntry = turn.root;
       const hasChildren = turn.children.filter(e => entryMatchesFilter(e)).length > 0;
-      const turnLabel = trunc(rootEntry.message?.content || '', 60);
+      const turnLabel = summarize(rootEntry);
       const turnLineNo = rootEntry._fileLine != null ? `#${rootEntry._fileLine}` : '';
 
       const turnHdr = document.createElement('div');
@@ -846,6 +962,7 @@ function renderDetail(e) {
       const texts = c.filter(b => b.type==='text' && !b.text?.startsWith('<system-reminder') && !b.text?.startsWith('<local-command'));
       const sysTexts = c.filter(b => b.type==='text' && (b.text?.startsWith('<system-reminder') || b.text?.startsWith('<local-command')));
       const toolResults = c.filter(b => b.type==='tool_result');
+      const images = c.filter(b => b.type==='image');
 
       if (texts.length) {
         const s = mkSection(`用户文本 (${texts.length})`, body => {
@@ -854,6 +971,22 @@ function renderDetail(e) {
             const d = document.createElement('div');
             d.className = 'md-view'; d.innerHTML = renderMarkdown(b.text);
             body.appendChild(d);
+          }
+        }, false);  // default expanded
+        panel.appendChild(s);
+      }
+      if (images.length) {
+        const s = mkSection(`图片 (${images.length})`, body => {
+          body.classList.add('content-bg');
+          for (const b of images) {
+            const src = b.source?.type === 'base64'
+              ? `data:${b.source.media_type};base64,${b.source.data}`
+              : b.source?.url || '';
+            if (!src) return;
+            const img = document.createElement('img');
+            img.src = src;
+            img.style.cssText = 'max-width:100%;max-height:400px;border-radius:4px;margin:4px 0;display:block';
+            body.appendChild(img);
           }
         }, false);  // default expanded
         panel.appendChild(s);
@@ -1010,6 +1143,151 @@ function renderDetail(e) {
     pre.innerHTML = syntaxHighlightJson(rawCopy);
     body.appendChild(pre);
   }, false));  // default expanded
+}
+
+// ── Export ───────────────────────────────────────────────────────────────
+function fmtExportFilename(sessionId) {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const ts = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  const shortId = sessionId ? `-${sessionId.slice(0, 8)}` : '';
+  return `export-${ts}${shortId}.tar.gz`;
+}
+
+function onExportSessionChange() {
+  const sel = document.getElementById('exportSessionSel');
+  const sessionId = sel.value;
+  document.getElementById('exportFilename').value = fmtExportFilename(sessionId);
+}
+
+async function openExportModal() {
+  const currentSessionId = document.getElementById('sessionSel').value;
+
+  // 填充 session 选择器
+  const sel = document.getElementById('exportSessionSel');
+  sel.innerHTML = '';
+  try {
+    const projects = await fetch(`${apiBase()}/api/projects`).then(r => r.json());
+    for (const proj of projects) {
+      const grp = document.createElement('optgroup');
+      grp.label = proj.projectDir;
+      for (const s of proj.sessions) {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        const ts = (s.lastTimestamp || '').slice(0, 16).replace('T', ' ');
+        opt.textContent = `${s.id.slice(0, 8)}… ${ts}`;
+        if (s.id === currentSessionId) opt.selected = true;
+        grp.appendChild(opt);
+      }
+      sel.appendChild(grp);
+    }
+  } catch {
+    // 回退：只显示当前 session
+    if (currentSessionId) {
+      const opt = document.createElement('option');
+      opt.value = currentSessionId;
+      opt.textContent = currentSessionId;
+      sel.appendChild(opt);
+    }
+  }
+
+  const sessionId = sel.value;
+  document.getElementById('exportSessionSel').disabled = false;
+  document.getElementById('exportFilename').disabled = false;
+  document.getElementById('exportFilename').value = fmtExportFilename(sessionId);
+  document.getElementById('exportStatus').textContent = '';
+  document.getElementById('exportImportCmd').style.display = 'none';
+  document.getElementById('chkSubagentLogs').disabled = false;
+  document.getElementById('chkSubagentLogs').checked = true;
+  document.getElementById('chkReqResp').disabled = false;
+  document.getElementById('chkReqResp').checked = true;
+  const btn = document.getElementById('exportConfirmBtn');
+  btn.disabled = false;
+  btn.textContent = '导出并下载';
+  btn.onclick = doExport;
+  document.getElementById('exportOverlay').classList.add('open');
+}
+
+function closeExportModal() {
+  document.getElementById('exportOverlay').classList.remove('open');
+}
+
+function onExportOverlayClick(e) {
+  if (e.target === document.getElementById('exportOverlay')) closeExportModal();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeExportModal();
+});
+
+async function doExport() {
+  const sessionId = document.getElementById('exportSessionSel').value;
+  if (!sessionId) return;
+  const filename = (document.getElementById('exportFilename').value.trim() || fmtExportFilename(sessionId))
+    .replace(/[/\\:*?"<>|]/g, '_');
+  const confirmBtn = document.getElementById('exportConfirmBtn');
+  const statusEl = document.getElementById('exportStatus');
+
+  const included = ['claudeLogs'];
+  if (document.getElementById('chkSubagentLogs').checked) included.push('subagentLogs');
+  if (document.getElementById('chkReqResp').checked) included.push('reqResp');
+
+  statusEl.textContent = '';
+  statusEl.style.color = '#8b949e';
+  confirmBtn.disabled = true;
+  confirmBtn.textContent = '生成中…';
+  confirmBtn.onclick = null;
+
+  try {
+    const includeParam = encodeURIComponent(included.join(','));
+    const url = `${apiBase()}/api/export?sessions=${encodeURIComponent(sessionId)}&filename=${encodeURIComponent(filename)}&include=${includeParam}`;
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${resp.status}`);
+    }
+    const blob = await resp.blob();
+
+    // 触发浏览器下载
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+
+    // 成功：锁定表单，展示结果
+    document.getElementById('exportSessionSel').disabled = true;
+    document.getElementById('exportFilename').disabled = true;
+    document.getElementById('chkSubagentLogs').disabled = true;
+    document.getElementById('chkReqResp').disabled = true;
+
+    statusEl.style.color = '#56d364';
+    statusEl.textContent = `✓ 导出成功，文件已下载至浏览器默认下载文件夹`;
+
+    document.getElementById('exportImportCmdText').textContent = `deep-ai-analysis import ~/Downloads/${filename} --open`;
+    document.getElementById('exportImportCmd').style.display = '';
+    document.getElementById('exportCopyBtn').textContent = '复制导入命令';
+
+    confirmBtn.textContent = '完成';
+    confirmBtn.disabled = false;
+    confirmBtn.onclick = closeExportModal;
+
+  } catch (e) {
+    statusEl.style.color = '#f85149';
+    statusEl.textContent = `导出失败：${e.message}`;
+    confirmBtn.textContent = '导出并下载';
+    confirmBtn.disabled = false;
+    confirmBtn.onclick = doExport;
+  }
+}
+
+function copyImportCmd() {
+  const text = document.getElementById('exportImportCmdText').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('exportCopyBtn');
+    btn.textContent = '已复制';
+    setTimeout(() => { btn.textContent = '复制导入命令'; }, 1500);
+  });
 }
 
 // ── Init ────────────────────────────────────────────────────────────────
