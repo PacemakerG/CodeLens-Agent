@@ -102,7 +102,7 @@ def export(
     if output is None:
         default_dir = Path.home() / "Downloads" / "deep-ai-analysis-exports"
         default_dir.mkdir(parents=True, exist_ok=True)
-        output = default_dir / default_filename(first_id)
+        output = default_dir / default_filename(first_id, len(resolved_session_ids))
     output.parent.mkdir(parents=True, exist_ok=True)
 
     req_resp_dates = _req_resp_dates_by_session(req_resp_dir)
@@ -116,12 +116,12 @@ def export(
 
     output.write_bytes(data)
 
-    click.echo(f"Exported {len(summaries)} session(s) to {output}")
+    click.echo(f"Exported package with {len(summaries)} session(s) to {output}")
     for summary in summaries:
         raw_note = " (no raw req/resp found)" if summary["raw_count"] == 0 else ""
         click.echo(
             f"- {summary['session_id']} [{summary['project_dir']}]: "
             f"{summary['subagent_count']} subagent files, {summary['raw_count']} raw log files{raw_note}"
         )
-    click.echo(f"\n发给别人后，对方可以运行：")
+    click.echo("\n发给别人后，对方把压缩包放到 Downloads，然后运行这一条命令导入包内所有 session：")
     click.echo(f"  deep-ai-analysis import {output} --open")

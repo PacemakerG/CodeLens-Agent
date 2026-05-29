@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import sys
 import tarfile
@@ -16,6 +17,7 @@ _IMPORTS_DIR = Path.home() / "Downloads" / "deep-ai-analysis-imports"
 _RAW_IMPORTS_DIR = Path.home() / "Downloads" / "deep-ai-analysis-imports" / "raw-req-resp"
 _MANIFEST_FILENAME = "manifest.json"
 _PACKAGE_ROOT = "deep-ai-analysis-export"
+_SESSION_ID_RE = re.compile(r"[0-9a-f-]{36}")
 
 
 def _find_package_root(base: Path) -> Path:
@@ -37,27 +39,117 @@ def _read_manifest(package_dir: Path) -> dict:
         manifest = json.loads(manifest_path.read_text())
     except (json.JSONDecodeError, OSError) as exc:
         raise click.ClickException(f"Failed to read manifest.json: {exc}") from exc
-    if "sessionId" not in manifest or "projectDir" not in manifest:
-        raise click.ClickException("manifest.json is missing required fields (sessionId, projectDir).")
     return manifest
 
 
-def _import_package(package_dir: Path, manifest: dict) -> tuple[Path, Path]:
-    """Copy package contents into the local imports dirs. Returns (projects_dir, raw_dir)."""
-    session_id: str = manifest["sessionId"]
-    project_dir_name: str = manifest["projectDir"]
+def _validate_session_id(session_id: str) -> str:
+    if not _SESSION_ID_RE.fullmatch(session_id):
+        raise click.ClickException(f"Invalid sessionId in manifest.json: {session_id!r}")
+    return session_id
 
+
+def _safe_child_name(value: str, field_name: str) -> str:
+    path = Path(value)
+    if path.is_absolute() or path.name != value or value in {"", ".", ".."}:
+        raise click.ClickException(f"Invalid {field_name} in manifest.json: {value!r}")
+    if "/" in value or "\\" in value:
+        raise click.ClickException(f"Invalid {field_name} in manifest.json: {value!r}")
+    return value
+
+
+def _safe_extract_tar(tar: tarfile.TarFile, dest: Path) -> None:
+    dest_resolved = dest.resolve()
+    for member in tar.getmembers():
+        target = (dest / member.name).resolve()
+        if target != dest_resolved and dest_resolved not in target.parents:
+            raise click.ClickException(f"Unsafe path in archive: {member.name}")
+        if member.issym() or member.islnk():
+            raise click.ClickException(f"Unsupported link in archive: {member.name}")
+    tar.extractall(dest)
+
+
+def _manifest_sessions(package_dir: Path, manifest: dict) -> list[dict[str, str | Path]]:
+    if isinstance(manifest.get("sessions"), list):
+        sessions = manifest["sessions"]
+        if not sessions:
+            raise click.ClickException("manifest.json sessions list is empty.")
+
+        result: list[dict[str, str | Path]] = []
+        seen: set[str] = set()
+        for item in sessions:
+            if not isinstance(item, dict):
+                raise click.ClickException("manifest.json sessions entries must be objects.")
+            if "sessionId" not in item or "projectDir" not in item:
+                raise click.ClickException("manifest.json session entry is missing required fields.")
+
+            session_id = _validate_session_id(str(item["sessionId"]))
+            if session_id in seen:
+                raise click.ClickException(f"Duplicate sessionId in manifest.json: {session_id}")
+            seen.add(session_id)
+
+            result.append({
+                "session_id": session_id,
+                "project_dir": _safe_child_name(str(item["projectDir"]), "projectDir"),
+                "source_dir": package_dir / "sessions" / session_id,
+            })
+        return result
+
+    if "sessionId" not in manifest or "projectDir" not in manifest:
+        raise click.ClickException(
+            "manifest.json is missing required fields (sessions or sessionId/projectDir)."
+        )
+
+    session_id = _validate_session_id(str(manifest["sessionId"]))
+    return [{
+        "session_id": session_id,
+        "project_dir": _safe_child_name(str(manifest["projectDir"]), "projectDir"),
+        "source_dir": package_dir,
+    }]
+
+
+def _remove_existing_import(session: dict[str, str | Path]) -> None:
+    session_id = str(session["session_id"])
+    project_dir_name = str(session["project_dir"])
+    dest_project = _IMPORTS_DIR / project_dir_name
+    session_log = dest_project / f"{session_id}.jsonl"
+    if session_log.exists():
+        session_log.unlink()
+
+    session_dir = dest_project / session_id
+    if session_dir.exists():
+        shutil.rmtree(session_dir)
+
+    raw_dir = _RAW_IMPORTS_DIR / session_id
+    if raw_dir.exists():
+        shutil.rmtree(raw_dir)
+
+
+def _has_existing_import(session: dict[str, str | Path]) -> bool:
+    session_id = str(session["session_id"])
+    project_dir_name = str(session["project_dir"])
+    dest_session_log = _IMPORTS_DIR / project_dir_name / f"{session_id}.jsonl"
+    return (
+        dest_session_log.exists()
+        or (_IMPORTS_DIR / project_dir_name / session_id).exists()
+        or (_RAW_IMPORTS_DIR / session_id).exists()
+    )
+
+
+def _import_session(session: dict[str, str | Path]) -> None:
+    session_id = str(session["session_id"])
+    project_dir_name = str(session["project_dir"])
+    package_session_dir = Path(session["source_dir"])
     dest_project = _IMPORTS_DIR / project_dir_name
     dest_project.mkdir(parents=True, exist_ok=True)
 
     # Main log
-    main_log_src = package_dir / "claude-logs" / "main-session.jsonl"
+    main_log_src = package_session_dir / "claude-logs" / "main-session.jsonl"
     if not main_log_src.exists():
         raise click.ClickException(f"main-session.jsonl not found in package: {main_log_src}")
     shutil.copy2(main_log_src, dest_project / f"{session_id}.jsonl")
 
     # Subagents
-    subagents_src = package_dir / "claude-logs" / "subagents"
+    subagents_src = package_session_dir / "claude-logs" / "subagents"
     if subagents_src.is_dir():
         dest_subagents = dest_project / session_id / "subagents"
         dest_subagents.mkdir(parents=True, exist_ok=True)
@@ -66,7 +158,7 @@ def _import_package(package_dir: Path, manifest: dict) -> tuple[Path, Path]:
                 shutil.copy2(f, dest_subagents / f.name)
 
     # Raw req-resp
-    req_resp_src = package_dir / "req-resp"
+    req_resp_src = package_session_dir / "req-resp"
     if req_resp_src.is_dir():
         dest_raw = _RAW_IMPORTS_DIR / session_id
         dest_raw.mkdir(parents=True, exist_ok=True)
@@ -74,7 +166,9 @@ def _import_package(package_dir: Path, manifest: dict) -> tuple[Path, Path]:
             if f.is_file():
                 shutil.copy2(f, dest_raw / f.name)
 
-    return _IMPORTS_DIR, _RAW_IMPORTS_DIR
+def _import_package(sessions: list[dict[str, str | Path]]) -> None:
+    for session in sessions:
+        _import_session(session)
 
 
 def _find_free_port(start: int, attempts: int = 10) -> int:
@@ -112,8 +206,8 @@ def import_(path: Path, open_viewer: bool, force: bool) -> None:
         tmp_path = Path(tmp)
 
         if path.is_file() and tarfile.is_tarfile(path):
-            with tarfile.open(path, "r:gz") as tar:
-                tar.extractall(tmp_path)
+            with tarfile.open(path, "r:*") as tar:
+                _safe_extract_tar(tar, tmp_path)
             package_dir = _find_package_root(tmp_path)
         elif path.is_dir():
             package_dir = _find_package_root(path)
@@ -121,20 +215,26 @@ def import_(path: Path, open_viewer: bool, force: bool) -> None:
             raise click.ClickException(f"{path} is not a tar.gz file or a directory.")
 
         manifest = _read_manifest(package_dir)
-        session_id: str = manifest["sessionId"]
-        project_dir_name: str = manifest["projectDir"]
+        sessions = _manifest_sessions(package_dir, manifest)
 
-        dest_session_log = _IMPORTS_DIR / project_dir_name / f"{session_id}.jsonl"
-        if dest_session_log.exists() and not force:
-            click.echo(f"Session {session_id} already imported at {dest_session_log.parent}.")
-            if not click.confirm("Overwrite?", default=False):
-                click.echo("Import cancelled.")
-                return
+        existing_sessions = [session for session in sessions if _has_existing_import(session)]
+        if existing_sessions:
+            if not force:
+                click.echo(
+                    f"Package contains {len(sessions)} session(s); "
+                    f"{len(existing_sessions)} existing import(s) will be overwritten."
+                )
+                click.echo(f"Import root: {_IMPORTS_DIR}")
+                if not click.confirm("Overwrite existing imported data?", default=False):
+                    click.echo("Import cancelled.")
+                    return
+            for session in existing_sessions:
+                _remove_existing_import(session)
 
-        _import_package(package_dir, manifest)
+        _import_package(sessions)
 
-    click.echo(f"Imported session: {session_id}")
-    click.echo(f"Location: {_IMPORTS_DIR / project_dir_name}")
+    click.echo(f"Imported {len(sessions)} session(s).")
+    click.echo(f"Location: {_IMPORTS_DIR}")
 
     if open_viewer:
         _open_viewer()

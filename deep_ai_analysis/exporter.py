@@ -26,33 +26,27 @@ def _add_bytes(tar: tarfile.TarFile, data: bytes, arcname: str, mode: int = 0o64
     tar.addfile(info, io.BytesIO(data))
 
 
-def _build_manifest(
-    session_id: str,
-    project_dir: str,
-    included: dict[str, bool],
-    counts: dict[str, int],
-) -> bytes:
+def _build_manifest(sessions: list[dict[str, Any]]) -> bytes:
     manifest = {
-        "exportVersion": "1.0",
+        "exportVersion": "2.0",
         "toolVersion": __version__,
-        "sessionId": session_id,
-        "projectDir": project_dir,
         "createdAt": datetime.now(timezone.utc).isoformat(),
-        "included": included,
-        "counts": counts,
+        "sessionCount": len(sessions),
+        "sessions": sessions,
     }
-    return json.dumps(manifest, indent=2).encode()
+    return json.dumps(manifest, indent=2, ensure_ascii=False).encode()
 
 
-def _build_readme(session_id: str) -> bytes:
+def _build_readme(session_count: int) -> bytes:
+    session_label = "1 session" if session_count == 1 else f"{session_count} sessions"
     content = f"""\
 # deep-ai-analysis 诊断包
 
-Session ID: `{session_id}`
+这个诊断包包含 {session_label}。
 
 ## 查看方式
 
-### 方式一：命令行导入（推荐）
+### 命令行导入
 
 如果是 tar.gz 压缩包：
 
@@ -66,11 +60,7 @@ deep-ai-analysis import export-xxx.tar.gz --open
 deep-ai-analysis import ./deep-ai-analysis-export --open
 ```
 
-`--open` 参数会自动启动 web-server 并在浏览器中打开查看页面。
-
-### 方式二：双击脚本（macOS）
-
-解压后双击 `view.command` 文件。
+该命令会导入包中的所有 session。`--open` 参数会自动启动 web-server 并在浏览器中打开查看页面。
 
 ## 前提条件
 
@@ -112,12 +102,13 @@ def export_session(
     if session is None:
         raise ValueError(f"Session not found: {session_id}")
 
+    session_root = f"{_ROOT}/sessions/{session_id}"
     project_dir = projects_dir / session["projectDir"]
     main_log = project_dir / f"{session_id}.jsonl"
     if not main_log.exists():
         raise ValueError(f"Main Claude log not found: {main_log}")
 
-    _add_file(tar, main_log, f"{_ROOT}/claude-logs/main-session.jsonl")
+    _add_file(tar, main_log, f"{session_root}/claude-logs/main-session.jsonl")
 
     subagent_count = 0
     if content_options.get("subagentLogs", True):
@@ -126,7 +117,7 @@ def export_session(
             for path in sorted(subagents_dir.iterdir()):
                 if not path.is_file():
                     continue
-                _add_file(tar, path, f"{_ROOT}/claude-logs/subagents/{path.name}")
+                _add_file(tar, path, f"{session_root}/claude-logs/subagents/{path.name}")
                 subagent_count += 1
 
     raw_count = 0
@@ -135,7 +126,7 @@ def export_session(
             raw_path = req_resp_dir / session_id / f"{date}.jsonl"
             if not raw_path.exists():
                 continue
-            _add_file(tar, raw_path, f"{_ROOT}/req-resp/{raw_path.name}")
+            _add_file(tar, raw_path, f"{session_root}/req-resp/{raw_path.name}")
             raw_count += 1
 
     included = {
@@ -145,18 +136,15 @@ def export_session(
     }
     counts = {"subagentFiles": subagent_count, "reqRespFiles": raw_count}
 
-    _add_bytes(tar, _build_manifest(session_id, session["projectDir"], included, counts), f"{_ROOT}/manifest.json")
-    _add_bytes(tar, _build_readme(session_id), f"{_ROOT}/README.md")
-    _add_bytes(tar, _build_view_command(), f"{_ROOT}/view.command", mode=0o755)
     _add_bytes(
         tar,
         json.dumps({"sessionId": session_id, "projectDir": session["projectDir"]}, indent=2).encode(),
-        f"{_ROOT}/metadata/session.json",
+        f"{session_root}/metadata/session.json",
     )
     _add_bytes(
         tar,
         json.dumps({"projectDir": session["projectDir"]}, indent=2).encode(),
-        f"{_ROOT}/metadata/project.json",
+        f"{session_root}/metadata/project.json",
     )
 
     return {
@@ -164,6 +152,12 @@ def export_session(
         "project_dir": session["projectDir"],
         "subagent_count": subagent_count,
         "raw_count": raw_count,
+        "manifest_entry": {
+            "sessionId": session_id,
+            "projectDir": session["projectDir"],
+            "included": included,
+            "counts": counts,
+        },
     }
 
 
@@ -186,10 +180,16 @@ def build_tar_gz_bytes(
                     req_resp_dates, get_session_fn, content_options,
                 )
             )
+        manifest_sessions = [summary["manifest_entry"] for summary in summaries]
+        _add_bytes(tar, _build_manifest(manifest_sessions), f"{_ROOT}/manifest.json")
+        _add_bytes(tar, _build_readme(len(summaries)), f"{_ROOT}/README.md")
+        _add_bytes(tar, _build_view_command(), f"{_ROOT}/view.command", mode=0o755)
     return buf.getvalue(), summaries
 
 
-def default_filename(session_id: str | None = None) -> str:
+def default_filename(session_id: str | None = None, session_count: int = 1) -> str:
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    if session_count > 1:
+        return f"export-{ts}-{session_count}-sessions.tar.gz"
     short_id = f"-{session_id[:8]}" if session_id else ""
     return f"export-{ts}{short_id}.tar.gz"

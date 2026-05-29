@@ -297,10 +297,24 @@ def _make_handler(projects_dir: Path, logs_dir: Path):
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
             self.end_headers()
             self.wfile.write(body)
+
+        def _read_json_body(self) -> dict[str, Any] | None:
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                return None
+            if length <= 0:
+                return {}
+            try:
+                body = self.rfile.read(length).decode("utf-8")
+                data = json.loads(body)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                return None
+            return data if isinstance(data, dict) else None
 
         def _send_binary(self, data: bytes, content_type: str, filename: str) -> None:
             self.send_response(200)
@@ -314,9 +328,52 @@ def _make_handler(projects_dir: Path, logs_dir: Path):
         def do_OPTIONS(self) -> None:
             self.send_response(204)
             self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
             self.end_headers()
+
+        def do_POST(self) -> None:
+            parsed = urlparse(self.path)
+            path = parsed.path.rstrip("/")
+
+            if path != "/api/analyze":
+                self._send_json({"ok": False, "error": "not found"}, 404)
+                return
+
+            payload = self._read_json_body()
+            if payload is None:
+                self._send_json({"ok": False, "error": "invalid JSON body"}, 400)
+                return
+
+            session_id = str(payload.get("sessionId", "")).strip()
+            if not re.fullmatch(r"[0-9a-f-]{36}", session_id):
+                self._send_json({"ok": False, "error": "invalid session id"}, 400)
+                return
+
+            session = get_session(session_id, projects_dir)
+            if session is None:
+                self._send_json({"ok": False, "error": "session not found"}, 404)
+                return
+
+            from deep_ai_analysis.analyzer import (
+                AnalysisError,
+                build_analysis_prompt,
+                run_mc_analysis,
+            )
+
+            prompt, truncated = build_analysis_prompt(session)
+            try:
+                report, elapsed_ms = run_mc_analysis(prompt)
+            except AnalysisError as exc:
+                self._send_json({"ok": False, "error": exc.message, "code": exc.code}, 500)
+                return
+
+            self._send_json({
+                "ok": True,
+                "report": report,
+                "elapsedMs": elapsed_ms,
+                "truncated": truncated,
+            })
 
         def do_GET(self) -> None:
             parsed = urlparse(self.path)
@@ -406,8 +463,6 @@ def _make_handler(projects_dir: Path, logs_dir: Path):
                 from deep_ai_analysis.exporter import build_tar_gz_bytes, default_filename
                 params = parse_qs(query)
                 raw_sessions = params.get("sessions", [""])[0]
-                first_session = raw_sessions.split(",")[0].strip() if raw_sessions else None
-                filename = params.get("filename", [""])[0].strip() or default_filename(first_session)
                 session_ids = [s.strip() for s in raw_sessions.split(",") if s.strip()]
                 if not session_ids:
                     self._send_json({"error": "sessions parameter is required"}, 400)
@@ -416,6 +471,9 @@ def _make_handler(projects_dir: Path, logs_dir: Path):
                 if invalid:
                     self._send_json({"error": f"invalid session id(s): {', '.join(invalid)}"}, 400)
                     return
+                first_session = session_ids[0] if len(session_ids) == 1 else None
+                filename = params.get("filename", [""])[0].strip() or default_filename(first_session, len(session_ids))
+                filename = Path(filename).name.replace('"', "_").replace("\r", "_").replace("\n", "_")
                 raw_include = params.get("include", ["claudeLogs,subagentLogs,reqResp"])[0]
                 included_keys = {k.strip() for k in raw_include.split(",")}
                 content_options = {

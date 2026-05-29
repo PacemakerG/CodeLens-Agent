@@ -49,6 +49,8 @@
     padding: 4px 10px; font-size: 12px; cursor: pointer; white-space: nowrap;
   }
   .btn:hover { background: #30363d; }
+  .btn:disabled { opacity: 0.55; cursor: default; }
+  .btn:disabled:hover { background: #21262d; }
   .badge { font-size: 11px; color: #8b949e; white-space: nowrap; }
   .nav-links { margin-left: auto; display: flex; gap: 10px; }
   .nav-link { font-size: 12px; color: #58a6ff; text-decoration: none; white-space: nowrap; }
@@ -255,6 +257,13 @@
   .md-view li { margin:2px 0; }
   .md-view strong { color:#f0f6fc; }
   .md-view em { color:#adbac7; }
+  .analysis-report { max-width: 980px; margin: 0 auto; }
+  .analysis-report .md-view { line-height: 1.55; }
+  .analysis-status {
+    border: 1px solid #30363d; border-radius: 7px; padding: 14px;
+    background: #161b22; color: #adbac7; font-size: 13px;
+  }
+  .analysis-status.error { color: #ffa198; border-color: #8e3434; }
 
   /* ── Export modal ── */
   .export-overlay {
@@ -289,7 +298,22 @@
   .export-check-label { font-size: 12px; color: #c9d1d9; display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
   .export-check-label input[type=checkbox] { accent-color: #388bfd; cursor: pointer; }
   .export-check-label input[type=checkbox]:disabled { cursor: default; opacity: 0.5; }
-  #exportSessionSel:disabled { appearance: none; -webkit-appearance: none; cursor: default; opacity: 0.7; }
+  .export-session-tools { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .export-session-count { margin-left: auto; font-size: 11px; color: #8b949e; }
+  .export-session-list {
+    max-height: 190px; overflow: auto; border: 1px solid #30363d; border-radius: 4px;
+    background: #0d1117; padding: 6px; display: flex; flex-direction: column; gap: 4px;
+  }
+  .export-session-project { font-size: 11px; color: #8b949e; padding: 5px 4px 2px; }
+  .export-session-row {
+    display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; gap: 6px;
+    padding: 5px 6px; border-radius: 4px; color: #c9d1d9; cursor: pointer;
+  }
+  .export-session-row:hover { background: #161b22; }
+  .export-session-row input { margin: 0; accent-color: #388bfd; }
+  .export-session-row input:disabled { cursor: default; opacity: 0.5; }
+  .export-session-main { font-size: 12px; color: #c9d1d9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .export-session-meta { font-size: 11px; color: #8b949e; margin-top: 2px; }
   #exportFilename:disabled { cursor: default; opacity: 0.7; }
   .export-import-cmd { background: #161b22; border: 1px solid #30363d; border-radius: 4px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
   .export-import-cmd-text { font-size: 11px; font-family: monospace; color: #58a6ff; word-break: break-all; }
@@ -343,6 +367,8 @@
     <label class="type-check checked-other" data-type="other"><input type="checkbox" checked>other</label>
   </div>
   <button class="btn" onclick="init()">刷新</button>
+  <button class="btn" id="analyzeBtn" onclick="analyzeCurrentSession()" disabled
+          title="临时调用 Claude Code 分析当前 session">分析当前 Session</button>
   <button class="btn" id="exportBtn" onclick="openExportModal()" disabled
           style="background:#1f6feb" title="导出当前 session 的日志和请求响应">导出</button>
   <span class="badge" id="countBadge"></span>
@@ -361,7 +387,13 @@
     <div class="export-card-body">
       <div>
         <div class="export-field-label">选择 Session</div>
-        <select class="field" id="exportSessionSel" style="width:100%;font-size:12px" onchange="onExportSessionChange()"></select>
+        <div class="export-session-tools">
+          <button class="export-action-btn" id="exportSelectCurrentBtn" onclick="selectCurrentExportSession()">当前</button>
+          <button class="export-action-btn" id="exportSelectAllBtn" onclick="selectAllExportSessions()">全选</button>
+          <button class="export-action-btn" id="exportClearBtn" onclick="clearExportSessions()">清空</button>
+          <span class="export-session-count" id="exportSessionCount"></span>
+        </div>
+        <div class="export-session-list" id="exportSessionList"></div>
       </div>
       <div>
         <div class="export-field-label">文件名</div>
@@ -384,7 +416,7 @@
       </div>
       <div class="export-status" id="exportStatus"></div>
       <div class="export-import-cmd" id="exportImportCmd" style="display:none">
-        <div class="export-field-label">发给别人后，对方运行：</div>
+        <div class="export-field-label">发给别人后，对方运行（导入包内所有 session）：</div>
         <div class="export-import-cmd-text" id="exportImportCmdText"></div>
         <div class="export-import-actions">
           <button class="export-action-btn" id="exportCopyBtn" onclick="copyImportCmd()">复制导入命令</button>
@@ -549,6 +581,7 @@ function fmtSessionLabel(s) {
 }
 
 function onProjectChange(restoreSession) {
+  resetAnalysisState();
   const projectDir = document.getElementById('projectSel').value;
   const proj = allProjects.find(p => p.projectDir === projectDir);
   const sel = document.getElementById('sessionSel');
@@ -578,6 +611,7 @@ async function loadSession() {
   const sessionId = document.getElementById('sessionSel').value;
   if (!sessionId) return;
 
+  resetAnalysisState();
   document.getElementById('entryList').innerHTML = '<span class="spinner"></span>';
   document.getElementById('detailPanel').innerHTML = '<div class="empty-detail">加载中…</div>';
 
@@ -630,9 +664,74 @@ async function loadSession() {
     // Enable export button
     const exportBtn = document.getElementById('exportBtn');
     if (exportBtn) exportBtn.disabled = false;
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    if (analyzeBtn) analyzeBtn.disabled = false;
   } catch(e) {
     document.getElementById('entryList').innerHTML =
       `<div class="placeholder" style="color:#f85149">加载失败: ${esc(e.message)}</div>`;
+  }
+}
+
+function resetAnalysisState() {
+  const analyzeBtn = document.getElementById('analyzeBtn');
+  if (analyzeBtn) {
+    analyzeBtn.disabled = true;
+    analyzeBtn.textContent = '分析当前 Session';
+  }
+}
+
+function renderAnalysisStatus(message, isError=false) {
+  const panel = document.getElementById('detailPanel');
+  panel.innerHTML = `<div class="analysis-status${isError ? ' error' : ''}">${esc(message)}</div>`;
+}
+
+function renderAnalysisReport(report, elapsedMs, truncated) {
+  const panel = document.getElementById('detailPanel');
+  const wrap = document.createElement('div');
+  wrap.className = 'analysis-report';
+
+  const meta = document.createElement('div');
+  meta.className = 'detail-meta';
+  meta.innerHTML =
+    `<span class="detail-type">当前 Session 分析报告</span>` +
+    `<span class="detail-ts">${esc(Math.round(elapsedMs / 1000))}s</span>` +
+    (truncated ? `<span class="sidechain-badge">输入已截断</span>` : '');
+  wrap.appendChild(meta);
+
+  const body = document.createElement('div');
+  body.className = 'md-view';
+  body.innerHTML = renderMarkdown(report);
+  wrap.appendChild(body);
+
+  panel.innerHTML = '';
+  panel.appendChild(wrap);
+}
+
+async function analyzeCurrentSession() {
+  const sessionId = document.getElementById('sessionSel').value;
+  if (!sessionId) return;
+
+  const btn = document.getElementById('analyzeBtn');
+  btn.disabled = true;
+  btn.textContent = '分析中…';
+  renderAnalysisStatus('正在临时调用 Claude Code 分析当前 session...');
+
+  try {
+    const resp = await fetch(`${apiBase()}/api/analyze`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({sessionId}),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) {
+      throw new Error(data.error || `HTTP ${resp.status}`);
+    }
+    renderAnalysisReport(data.report || '', data.elapsedMs || 0, Boolean(data.truncated));
+  } catch (e) {
+    renderAnalysisStatus(`分析失败：${e.message}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '分析当前 Session';
   }
 }
 
@@ -1146,55 +1245,107 @@ function renderDetail(e) {
 }
 
 // ── Export ───────────────────────────────────────────────────────────────
-function fmtExportFilename(sessionId) {
+let exportCurrentSessionId = '';
+
+function fmtExportFilename(sessionIds) {
+  const ids = Array.isArray(sessionIds) ? sessionIds : (sessionIds ? [sessionIds] : []);
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
   const ts = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-  const shortId = sessionId ? `-${sessionId.slice(0, 8)}` : '';
+  if (ids.length > 1) return `export-${ts}-${ids.length}-sessions.tar.gz`;
+  const shortId = ids.length === 1 ? `-${ids[0].slice(0, 8)}` : '';
   return `export-${ts}${shortId}.tar.gz`;
 }
 
-function onExportSessionChange() {
-  const sel = document.getElementById('exportSessionSel');
-  const sessionId = sel.value;
-  document.getElementById('exportFilename').value = fmtExportFilename(sessionId);
+function selectedExportSessionIds() {
+  return Array.from(document.querySelectorAll('#exportSessionList input[type=checkbox]:checked'))
+    .map(input => input.value);
+}
+
+function setExportSessionControlsDisabled(disabled) {
+  document.querySelectorAll('#exportSessionList input, #exportSelectCurrentBtn, #exportSelectAllBtn, #exportClearBtn')
+    .forEach(el => { el.disabled = disabled; });
+}
+
+function updateExportSessionSelection() {
+  const sessionIds = selectedExportSessionIds();
+  document.getElementById('exportFilename').value = fmtExportFilename(sessionIds);
+  document.getElementById('exportSessionCount').textContent = `已选择 ${sessionIds.length} 个 session`;
+  document.getElementById('exportConfirmBtn').disabled = sessionIds.length === 0;
+}
+
+function selectCurrentExportSession() {
+  document.querySelectorAll('#exportSessionList input[type=checkbox]').forEach(input => {
+    input.checked = input.value === exportCurrentSessionId;
+  });
+  updateExportSessionSelection();
+}
+
+function selectAllExportSessions() {
+  document.querySelectorAll('#exportSessionList input[type=checkbox]').forEach(input => {
+    input.checked = true;
+  });
+  updateExportSessionSelection();
+}
+
+function clearExportSessions() {
+  document.querySelectorAll('#exportSessionList input[type=checkbox]').forEach(input => {
+    input.checked = false;
+  });
+  updateExportSessionSelection();
+}
+
+function appendExportSessionRow(container, projectDir, session, selected) {
+  const label = document.createElement('label');
+  label.className = 'export-session-row';
+
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.value = session.id;
+  input.checked = selected;
+  input.onchange = updateExportSessionSelection;
+
+  const text = document.createElement('div');
+  const main = document.createElement('div');
+  main.className = 'export-session-main';
+  main.textContent = `${session.id.slice(0, 8)}...`;
+  const meta = document.createElement('div');
+  meta.className = 'export-session-meta';
+  meta.textContent = `${projectDir} ${((session.lastTimestamp || '').slice(0, 16).replace('T', ' ') || '-')}`;
+  text.appendChild(main);
+  text.appendChild(meta);
+
+  label.appendChild(input);
+  label.appendChild(text);
+  container.appendChild(label);
 }
 
 async function openExportModal() {
   const currentSessionId = document.getElementById('sessionSel').value;
+  exportCurrentSessionId = currentSessionId;
 
-  // 填充 session 选择器
-  const sel = document.getElementById('exportSessionSel');
-  sel.innerHTML = '';
+  const list = document.getElementById('exportSessionList');
+  list.innerHTML = '';
   try {
     const projects = await fetch(`${apiBase()}/api/projects`).then(r => r.json());
     for (const proj of projects) {
-      const grp = document.createElement('optgroup');
-      grp.label = proj.projectDir;
+      const header = document.createElement('div');
+      header.className = 'export-session-project';
+      header.textContent = proj.projectDir;
+      list.appendChild(header);
       for (const s of proj.sessions) {
-        const opt = document.createElement('option');
-        opt.value = s.id;
-        const ts = (s.lastTimestamp || '').slice(0, 16).replace('T', ' ');
-        opt.textContent = `${s.id.slice(0, 8)}… ${ts}`;
-        if (s.id === currentSessionId) opt.selected = true;
-        grp.appendChild(opt);
+        appendExportSessionRow(list, proj.projectDir, s, s.id === currentSessionId);
       }
-      sel.appendChild(grp);
     }
   } catch {
     // 回退：只显示当前 session
     if (currentSessionId) {
-      const opt = document.createElement('option');
-      opt.value = currentSessionId;
-      opt.textContent = currentSessionId;
-      sel.appendChild(opt);
+      appendExportSessionRow(list, '-', {id: currentSessionId, lastTimestamp: ''}, true);
     }
   }
 
-  const sessionId = sel.value;
-  document.getElementById('exportSessionSel').disabled = false;
+  setExportSessionControlsDisabled(false);
   document.getElementById('exportFilename').disabled = false;
-  document.getElementById('exportFilename').value = fmtExportFilename(sessionId);
   document.getElementById('exportStatus').textContent = '';
   document.getElementById('exportImportCmd').style.display = 'none';
   document.getElementById('chkSubagentLogs').disabled = false;
@@ -1205,6 +1356,7 @@ async function openExportModal() {
   btn.disabled = false;
   btn.textContent = '导出并下载';
   btn.onclick = doExport;
+  updateExportSessionSelection();
   document.getElementById('exportOverlay').classList.add('open');
 }
 
@@ -1221,9 +1373,9 @@ document.addEventListener('keydown', e => {
 });
 
 async function doExport() {
-  const sessionId = document.getElementById('exportSessionSel').value;
-  if (!sessionId) return;
-  const filename = (document.getElementById('exportFilename').value.trim() || fmtExportFilename(sessionId))
+  const sessionIds = selectedExportSessionIds();
+  if (!sessionIds.length) return;
+  const filename = (document.getElementById('exportFilename').value.trim() || fmtExportFilename(sessionIds))
     .replace(/[/\\:*?"<>|]/g, '_');
   const confirmBtn = document.getElementById('exportConfirmBtn');
   const statusEl = document.getElementById('exportStatus');
@@ -1240,7 +1392,7 @@ async function doExport() {
 
   try {
     const includeParam = encodeURIComponent(included.join(','));
-    const url = `${apiBase()}/api/export?sessions=${encodeURIComponent(sessionId)}&filename=${encodeURIComponent(filename)}&include=${includeParam}`;
+    const url = `${apiBase()}/api/export?sessions=${encodeURIComponent(sessionIds.join(','))}&filename=${encodeURIComponent(filename)}&include=${includeParam}`;
     const resp = await fetch(url);
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
@@ -1256,13 +1408,13 @@ async function doExport() {
     setTimeout(() => URL.revokeObjectURL(a.href), 10000);
 
     // 成功：锁定表单，展示结果
-    document.getElementById('exportSessionSel').disabled = true;
+    setExportSessionControlsDisabled(true);
     document.getElementById('exportFilename').disabled = true;
     document.getElementById('chkSubagentLogs').disabled = true;
     document.getElementById('chkReqResp').disabled = true;
 
     statusEl.style.color = '#56d364';
-    statusEl.textContent = `✓ 导出成功，文件已下载至浏览器默认下载文件夹`;
+    statusEl.textContent = `✓ 诊断包导出成功，文件已下载至浏览器默认下载文件夹`;
 
     document.getElementById('exportImportCmdText').textContent = `deep-ai-analysis import ~/Downloads/${filename} --open`;
     document.getElementById('exportImportCmd').style.display = '';

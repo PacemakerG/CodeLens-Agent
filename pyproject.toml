@@ -19,4 +19,5 @@ where = ["."]
 include = ["deep_ai_analysis*", "viewer*"]
 
 [tool.setuptools.package-data]
+deep_ai_analysis = ["assets/*.md"]
 viewer = ["*.html"]
