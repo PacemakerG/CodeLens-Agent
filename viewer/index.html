@@ -244,6 +244,54 @@
   @keyframes spin { to { transform: rotate(360deg); } }
 
   .error-msg { color: #f85149; font-size: 13px; }
+
+  /* ── Export modal ── */
+  .export-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.65); z-index: 9999;
+    align-items: center; justify-content: center;
+  }
+  .export-overlay.open { display: flex; }
+  .export-card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+    width: min(480px, 95vw); overflow: hidden;
+  }
+  .export-card-hdr {
+    background: #0d1117; padding: 10px 14px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid #30363d;
+  }
+  .export-card-title { font-size: 13px; font-weight: 600; color: #f0f6fc; }
+  .export-card-close {
+    background: none; border: none; color: #8b949e;
+    font-size: 16px; cursor: pointer; padding: 0 4px; line-height: 1;
+  }
+  .export-card-close:hover { color: #e1e4e8; }
+  .export-card-body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .export-field-label { font-size: 11px; color: #8b949e; margin-bottom: 4px; }
+  .export-field-value {
+    font-size: 12px; color: #adbac7; font-family: monospace;
+    background: #0d1117; border: 1px solid #21262d; border-radius: 4px;
+    padding: 5px 8px; word-break: break-all;
+  }
+  .export-checklist { display: flex; flex-direction: column; gap: 4px; }
+  .export-checklist-item { font-size: 12px; color: #56d364; }
+  .export-card-footer {
+    padding: 10px 14px; border-top: 1px solid #30363d;
+    display: flex; justify-content: flex-end; gap: 8px;
+  }
+  .export-btn-cancel {
+    background: #21262d; color: #e1e4e8; border: 1px solid #30363d;
+    border-radius: 5px; padding: 5px 14px; font-size: 12px; cursor: pointer;
+  }
+  .export-btn-cancel:hover { background: #30363d; }
+  .export-btn-confirm {
+    background: #1f6feb; color: #fff; border: none;
+    border-radius: 5px; padding: 5px 14px; font-size: 12px; cursor: pointer;
+  }
+  .export-btn-confirm:hover { background: #388bfd; }
+  .export-btn-confirm:disabled { background: #21262d; color: #484f58; cursor: default; }
+  .export-status { font-size: 11px; color: #8b949e; margin-top: 2px; min-height: 16px; }
 </style>
 </head>
 <body>
@@ -266,6 +314,42 @@
   </select>
   <button class="btn" id="loadBtn" onclick="loadSession()">Load</button>
   <button class="btn" style="background:#21262d;color:#8b949e" onclick="fetchProjects()">Refresh</button>
+  <button class="btn" id="exportBtn" onclick="openExportModal()" disabled
+          style="background:#1f6feb" title="导出当前 session 的日志和请求响应">导出</button>
+</div>
+
+<!-- Export modal -->
+<div class="export-overlay" id="exportOverlay" onclick="onExportOverlayClick(event)">
+  <div class="export-card">
+    <div class="export-card-hdr">
+      <span class="export-card-title">导出对话记录</span>
+      <button class="export-card-close" onclick="closeExportModal()">✕</button>
+    </div>
+    <div class="export-card-body">
+      <div>
+        <div class="export-field-label">Session</div>
+        <div class="export-field-value" id="exportSessionId">—</div>
+      </div>
+      <div>
+        <div class="export-field-label">文件名</div>
+        <input class="field" id="exportFilename" type="text" style="width:100%;font-size:12px"
+               placeholder="export-YYYYMMDD-HHmmss.tar.gz">
+      </div>
+      <div>
+        <div class="export-field-label">包含内容</div>
+        <div class="export-checklist">
+          <div class="export-checklist-item">✓ Claude Code 主日志</div>
+          <div class="export-checklist-item">✓ Subagent 日志（如有）</div>
+          <div class="export-checklist-item">✓ 原始请求响应（如有）</div>
+        </div>
+      </div>
+      <div class="export-status" id="exportStatus"></div>
+    </div>
+    <div class="export-card-footer">
+      <button class="export-btn-cancel" onclick="closeExportModal()">取消</button>
+      <button class="export-btn-confirm" id="exportConfirmBtn" onclick="doExport()">选择位置并导出</button>
+    </div>
+  </div>
 </div>
 
 <!-- Stats bar -->
@@ -399,6 +483,8 @@ async function loadSession() {
     }
     currentData = await resp.json();
     renderAll(currentData);
+    const exportBtn = document.getElementById('exportBtn');
+    if (exportBtn) exportBtn.disabled = false;
   } catch (e) {
     setStats(`<span class="error-msg">Error: ${escHtml(e.message)}</span>`);
   }
@@ -881,10 +967,103 @@ function closeHttpModal(event) {
   document.getElementById('httpModalOverlay').classList.add('hidden');
 }
 
-// Close modal on Escape key
+// Close modals on Escape key
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeHttpModal();
+  if (e.key === 'Escape') { closeHttpModal(); closeExportModal(); }
 });
+
+// ── Export ─────────────────────────────────────────────────────────────────
+function fmtExportFilename() {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `export-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.tar.gz`;
+}
+
+function openExportModal() {
+  const sessionId = document.getElementById('sessionSel').value;
+  if (!sessionId) return;
+  document.getElementById('exportSessionId').textContent = sessionId;
+  document.getElementById('exportFilename').value = fmtExportFilename();
+  document.getElementById('exportStatus').textContent = '';
+  const btn = document.getElementById('exportConfirmBtn');
+  btn.disabled = false;
+  btn.textContent = '选择位置并导出';
+  btn.onclick = doExport;
+  document.getElementById('exportOverlay').classList.add('open');
+}
+
+function closeExportModal() {
+  const el = document.getElementById('exportOverlay');
+  if (el) el.classList.remove('open');
+}
+
+function onExportOverlayClick(e) {
+  if (e.target === document.getElementById('exportOverlay')) closeExportModal();
+}
+
+async function doExport() {
+  const sessionId = document.getElementById('exportSessionId').textContent.trim();
+  const filename = (document.getElementById('exportFilename').value.trim() || fmtExportFilename())
+    .replace(/[/\\:*?"<>|]/g, '_');
+  const confirmBtn = document.getElementById('exportConfirmBtn');
+  const statusEl = document.getElementById('exportStatus');
+
+  statusEl.textContent = '';
+  statusEl.style.color = '#8b949e';
+
+  try {
+    // 1. 在用户手势上下文内立即唤起"选择文件夹"对话框
+    let dirHandle = null;
+    if (window.showDirectoryPicker) {
+      dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    }
+
+    // 2. 文件夹选好后再生成数据
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '生成中…';
+    confirmBtn.onclick = null;
+
+    const url = `${apiBase()}/api/export?sessions=${encodeURIComponent(sessionId)}&filename=${encodeURIComponent(filename)}`;
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${resp.status}`);
+    }
+    const blob = await resp.blob();
+
+    // 3. 写入文件
+    if (dirHandle) {
+      const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+    } else {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    }
+
+    // 4. 成功：显示结果，按钮变为「完成」，不自动关闭
+    statusEl.style.color = '#56d364';
+    statusEl.textContent = `✓ 已导出：${filename}`;
+    confirmBtn.textContent = '完成';
+    confirmBtn.disabled = false;
+    confirmBtn.onclick = closeExportModal;
+
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      statusEl.textContent = '';
+    } else {
+      statusEl.style.color = '#f85149';
+      statusEl.textContent = `导出失败：${e.message}`;
+    }
+    confirmBtn.textContent = '选择位置并导出';
+    confirmBtn.disabled = false;
+    confirmBtn.onclick = doExport;
+  }
+}
 
 // ── Init ───────────────────────────────────────────────────────────────────
 fetchProjects();
