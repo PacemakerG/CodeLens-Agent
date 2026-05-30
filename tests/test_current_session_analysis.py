@@ -163,6 +163,18 @@ class AnalyzeFrontendTests(unittest.TestCase):
         self.assertIn("body: JSON.stringify({sessionId})", html)
         self.assertNotIn("turnKeys", html)
 
+    def test_frontend_caches_reports_and_supports_reanalysis(self) -> None:
+        html = (Path(__file__).resolve().parents[1] / "viewer" / "claude-log.html").read_text(encoding="utf-8")
+
+        self.assertIn("const analysisReports = {}", html)
+        self.assertIn("analysisReports[sessionId] = cached", html)
+        self.assertIn("analysisReports[sessionId] ? '查看分析报告' : '分析当前 Session'", html)
+        self.assertIn("function showCachedAnalysisReport()", html)
+        self.assertIn("function reanalyzeCurrentSession()", html)
+        self.assertIn("preserveCached && previous", html)
+        self.assertIn("analysisReports[sessionId] = previous", html)
+        self.assertIn("重新分析失败", html)
+
 
 if __name__ == "__main__":
     unittest.main()

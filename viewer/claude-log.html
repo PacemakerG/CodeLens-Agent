@@ -264,6 +264,7 @@
     background: #161b22; color: #adbac7; font-size: 13px;
   }
   .analysis-status.error { color: #ffa198; border-color: #8e3434; }
+  .analysis-actions { display: flex; gap: 8px; margin-left: auto; }
 
   /* ── Export modal ── */
   .export-overlay {
@@ -470,6 +471,8 @@ let allEntries = [];
 let selectedIdx = -1;
 // Track collapsed state per group id
 const groupCollapsed = {};
+const analysisReports = {};
+let analysisInFlight = false;
 
 function toggleAdv() {
   document.getElementById('advPanel').classList.toggle('open');
@@ -664,8 +667,7 @@ async function loadSession() {
     // Enable export button
     const exportBtn = document.getElementById('exportBtn');
     if (exportBtn) exportBtn.disabled = false;
-    const analyzeBtn = document.getElementById('analyzeBtn');
-    if (analyzeBtn) analyzeBtn.disabled = false;
+    updateAnalyzeButton();
   } catch(e) {
     document.getElementById('entryList').innerHTML =
       `<div class="placeholder" style="color:#f85149">加载失败: ${esc(e.message)}</div>`;
@@ -673,6 +675,7 @@ async function loadSession() {
 }
 
 function resetAnalysisState() {
+  analysisInFlight = false;
   const analyzeBtn = document.getElementById('analyzeBtn');
   if (analyzeBtn) {
     analyzeBtn.disabled = true;
@@ -680,12 +683,39 @@ function resetAnalysisState() {
   }
 }
 
-function renderAnalysisStatus(message, isError=false) {
-  const panel = document.getElementById('detailPanel');
-  panel.innerHTML = `<div class="analysis-status${isError ? ' error' : ''}">${esc(message)}</div>`;
+function currentAnalysisSessionId() {
+  return document.getElementById('sessionSel').value;
 }
 
-function renderAnalysisReport(report, elapsedMs, truncated) {
+function currentAnalysisReport() {
+  const sessionId = currentAnalysisSessionId();
+  return sessionId ? analysisReports[sessionId] : null;
+}
+
+function updateAnalyzeButton() {
+  const analyzeBtn = document.getElementById('analyzeBtn');
+  if (!analyzeBtn) return;
+  const sessionId = currentAnalysisSessionId();
+  if (!sessionId) {
+    analyzeBtn.disabled = true;
+    analyzeBtn.textContent = '分析当前 Session';
+    return;
+  }
+  analyzeBtn.disabled = analysisInFlight;
+  analyzeBtn.textContent = analysisInFlight
+    ? '分析中…'
+    : (analysisReports[sessionId] ? '查看分析报告' : '分析当前 Session');
+}
+
+function renderAnalysisStatus(message, isError=false, cachedReport=null) {
+  const panel = document.getElementById('detailPanel');
+  const action = cachedReport
+    ? `<div style="margin-top:10px"><button class="btn" onclick="showCachedAnalysisReport()">查看上一次报告</button></div>`
+    : '';
+  panel.innerHTML = `<div class="analysis-status${isError ? ' error' : ''}">${esc(message)}${action}</div>`;
+}
+
+function renderAnalysisReport(cachedReport) {
   const panel = document.getElementById('detailPanel');
   const wrap = document.createElement('div');
   wrap.className = 'analysis-report';
@@ -694,45 +724,89 @@ function renderAnalysisReport(report, elapsedMs, truncated) {
   meta.className = 'detail-meta';
   meta.innerHTML =
     `<span class="detail-type">当前 Session 分析报告</span>` +
-    `<span class="detail-ts">${esc(Math.round(elapsedMs / 1000))}s</span>` +
-    (truncated ? `<span class="sidechain-badge">输入已截断</span>` : '');
+    `<span class="detail-ts">${esc(cachedReport.createdAt)}</span>` +
+    `<span class="detail-ts">${esc(Math.round(cachedReport.elapsedMs / 1000))}s</span>` +
+    (cachedReport.truncated ? `<span class="sidechain-badge">输入已截断</span>` : '');
+  const actions = document.createElement('div');
+  actions.className = 'analysis-actions';
+  actions.innerHTML = `<button class="btn" onclick="reanalyzeCurrentSession()">重新分析</button>`;
+  meta.appendChild(actions);
   wrap.appendChild(meta);
 
   const body = document.createElement('div');
   body.className = 'md-view';
-  body.innerHTML = renderMarkdown(report);
+  body.innerHTML = renderMarkdown(cachedReport.report);
   wrap.appendChild(body);
 
   panel.innerHTML = '';
   panel.appendChild(wrap);
 }
 
-async function analyzeCurrentSession() {
+function showCachedAnalysisReport() {
   const sessionId = document.getElementById('sessionSel').value;
   if (!sessionId) return;
+  const cached = analysisReports[sessionId];
+  if (cached) {
+    renderAnalysisReport(cached);
+  } else {
+    analyzeCurrentSession();
+  }
+  updateAnalyzeButton();
+}
 
-  const btn = document.getElementById('analyzeBtn');
-  btn.disabled = true;
-  btn.textContent = '分析中…';
+async function requestSessionAnalysis(sessionId) {
+  const resp = await fetch(`${apiBase()}/api/analyze`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({sessionId}),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.ok) {
+    throw new Error(data.error || `HTTP ${resp.status}`);
+  }
+  return {
+    report: data.report || '',
+    elapsedMs: data.elapsedMs || 0,
+    truncated: Boolean(data.truncated),
+    createdAt: new Date().toLocaleString('zh-CN', {hour12: false}),
+  };
+}
+
+async function runAnalysisForCurrentSession({preserveCached=false} = {}) {
+  const sessionId = document.getElementById('sessionSel').value;
+  if (!sessionId || analysisInFlight) return;
+  const previous = analysisReports[sessionId] || null;
+  analysisInFlight = true;
+  updateAnalyzeButton();
   renderAnalysisStatus('正在临时调用 Claude Code 分析当前 session...');
 
   try {
-    const resp = await fetch(`${apiBase()}/api/analyze`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({sessionId}),
-    });
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok || !data.ok) {
-      throw new Error(data.error || `HTTP ${resp.status}`);
-    }
-    renderAnalysisReport(data.report || '', data.elapsedMs || 0, Boolean(data.truncated));
+    const cached = await requestSessionAnalysis(sessionId);
+    analysisReports[sessionId] = cached;
+    renderAnalysisReport(cached);
   } catch (e) {
-    renderAnalysisStatus(`分析失败：${e.message}`, true);
+    if (preserveCached && previous) {
+      analysisReports[sessionId] = previous;
+      renderAnalysisStatus(`重新分析失败：${e.message}`, true, previous);
+    } else {
+      renderAnalysisStatus(`分析失败：${e.message}`, true);
+    }
   } finally {
-    btn.disabled = false;
-    btn.textContent = '分析当前 Session';
+    analysisInFlight = false;
+    updateAnalyzeButton();
   }
+}
+
+function analyzeCurrentSession() {
+  if (currentAnalysisReport()) {
+    showCachedAnalysisReport();
+    return;
+  }
+  runAnalysisForCurrentSession();
+}
+
+function reanalyzeCurrentSession() {
+  runAnalysisForCurrentSession({preserveCached: true});
 }
 
 // ── Render list ──────────────────────────────────────────────────────────

@@ -10,3 +10,4 @@ build/
 .venv/
 .vscode/settings.json
 .agents/
+drawio/
